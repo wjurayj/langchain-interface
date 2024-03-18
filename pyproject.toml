@@ -1,0 +1,17 @@
+[build-system]
+requires = [
+    "setuptools>=54",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langchain-interface"
+version = "0.0.1"
+dependencies = [
+    "langchain",
+    "overrides",
+    "langchain-community",
+    "langchain-core",
+    "registrable@git+git@github.com:zipJiang/registrable.git"
+]
