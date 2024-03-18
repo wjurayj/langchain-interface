@@ -13,5 +13,5 @@ dependencies = [
     "overrides",
     "langchain-community",
     "langchain-core",
-    "registrable@git+git@github.com:zipJiang/registrable.git"
+    "registrable@git+ssh://git@github.com:zipJiang/registrable.git"
 ]
