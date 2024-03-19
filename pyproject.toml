@@ -13,5 +13,6 @@ dependencies = [
     "overrides",
     "langchain-community",
     "langchain-core",
+    "rank_bm25",
     "registrable@git+ssh://git@github.com/zipJiang/registrable.git"
 ]
