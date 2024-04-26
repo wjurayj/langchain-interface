@@ -33,7 +33,7 @@ class ChatInterface(Interface):
         input_example_prompt: Optional[Text] = None,
         output_example_prompt: Optional[Text] = None,
         input_parser: Optional[Callable[[LLMQueryInstance], Dict[Text, Text]]] = lambda x: {k: str(v) for k, v in asdict(x).items() if not k.endswith("hash")},
-        output_parser: Optional[Callable[[Text], Union[int, float]]] = lambda x: float(x.strip()),
+        output_parser: Optional[Callable[[Text], Any]] = lambda x: float(x.strip()),
         temperature: float = 0,
         top_k: int = -1,
         top_p: float = 1,
@@ -132,7 +132,7 @@ class ChatInterface(Interface):
         
 
     @overrides
-    def __call__(self, instances: List[LLMQueryInstance]) -> List[Union[int, float]]:
+    def __call__(self, instances: List[LLMQueryInstance]) -> List[Dict[Text, Any]]:
         """
         """
         

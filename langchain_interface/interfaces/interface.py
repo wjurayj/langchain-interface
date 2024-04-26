@@ -13,5 +13,5 @@ class Interface(Registrable):
         super().__init__()
         
     @abc.abstractmethod
-    async def __call__(self, instances: List[LLMQueryInstance]) -> List[Union[int, float]]:
+    async def __call__(self, instances: List[LLMQueryInstance]) -> List[Dict[Text, Any]]:
         raise NotImplementedError

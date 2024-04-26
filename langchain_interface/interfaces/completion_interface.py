@@ -33,7 +33,7 @@ class CompletionInterface(Interface):
         example_selector: Optional[ExampleSelector] = None,
         example_prompt_construction: Optional[Dict[Text, Any]] = None,
         input_parser: Optional[Callable[[LLMQueryInstance], Dict[Text, Text]]] = lambda x: {k: str(v) for k, v in asdict(x).items() if not k.endswith("hash")},
-        output_parser: Optional[Callable[[Text], Any]] = lambda x: float(x.strip()),
+        output_parser: Optional[Callable[[Text], Dict[Text, Any]]] = lambda x: float(x.strip()),
         temperature: float = 0,
         top_k: int = -1,
         top_p: float = 1,
@@ -107,9 +107,9 @@ class CompletionInterface(Interface):
         
 
     @overrides
-    def __call__(self, instances: List[LLMQueryInstance]) -> List[Any]:
+    def __call__(self, instances: List[LLMQueryInstance]) -> List[Dict[Text, Any]]:
         """
         """
         instances = [self.input_parser(ins) for ins in instances]
         
-        return [self.output_parser(item) for item in self.llm_chain.batch(instances, stop=self.stop)]
+        return [{"raw": item, "parsed": self.output_parser(item)} for item in self.llm_chain.batch(instances, stop=self.stop)]
