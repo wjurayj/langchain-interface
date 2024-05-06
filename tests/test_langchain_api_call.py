@@ -2,6 +2,7 @@
 client is not possible to call the API and get results.
 """
 from unittest import TestCase
+import asyncio
 from langchain_interface.instances import LLMQueryInstance
 from langchain_interface.interfaces.chat_interface import ChatInterface
 from langchain_interface.interfaces.completion_interface import CompletionInterface
@@ -50,11 +51,29 @@ class TestLangChainAPICall(TestCase):
         queries = [LLMQueryInstance(id=tidx, input=text) for tidx, text in enumerate(self.test_cases)]
         results = self.chat_interface(queries, silence=True)
         
+        print("=" * 20)
         for r in results:
-            print("=" * 20)
+            print("-" * 20)
             for fact in r['parsed']:
                 print(fact)
+            print("-" * 20)
+        print("=" * 20)
+    
+    def test_async_chat_interface(self):            
+        """
+        """
+        async def test_func():
+            queries = [LLMQueryInstance(id=tidx, input=text) for tidx, text in enumerate(self.test_cases)]
             print("=" * 20)
+            print("Async calls:")
+            async for r in self.chat_interface.async_call(queries):
+                print("-" * 20)
+                for fact in r['parsed']:
+                    print(fact)
+                print("-" * 20)
+            print("=" * 20)
+        
+        asyncio.run(test_func())
             
     def test_completion_interface(self):
         """Although the completion interface is no longer used, we want to make sure that it works for backward compatibility."""
@@ -62,8 +81,10 @@ class TestLangChainAPICall(TestCase):
         queries = [LLMQueryInstance(id=tidx, input=text) for tidx, text in enumerate(self.test_cases)]
         results = self.completion_interface(queries, silence=True)
         
+        print("=" * 20)
         for r in results:
-            print("=" * 20)
+            print("-" * 20)
             for fact in r['parsed']:
                 print(fact)
-            print("=" * 20)
+            print("-" * 20)
+        print("=" * 20)

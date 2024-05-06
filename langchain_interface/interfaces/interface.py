@@ -2,8 +2,9 @@
 """
 
 import abc
+import asyncio
 from registrable import Registrable
-from typing import Union, List, Dict, Text, Any
+from typing import Union, List, Dict, Text, Any, Iterable, AsyncGenerator, Awaitable
 from tqdm import tqdm
 from ..instances.instance import LLMQueryInstance
 
@@ -48,3 +49,17 @@ class Interface(Registrable):
             pbar.update(batch_size)
 
         return results
+    
+    async def async_call(self, instances: List[LLMQueryInstance]) -> AsyncGenerator[Dict[Text, Any], None]:
+        """
+        """
+        
+        instances = [self.input_parser(ins) for ins in instances]
+        
+        for bidx in range(0, len(instances), self.batch_size):
+            batch_size = min(self.batch_size, len(instances) - bidx)
+
+            async for _, result in self.llm_chain.abatch_as_completed(
+                instances[bidx : bidx + batch_size], self.runnable_config
+            ):
+                yield {"raw": result, "parsed": self.output_parser(result)}
