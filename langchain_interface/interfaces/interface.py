@@ -4,7 +4,7 @@
 import abc
 import asyncio
 from registrable import Registrable
-from typing import Union, List, Dict, Text, Any, Iterable, AsyncGenerator, Awaitable
+from typing import Union, List, Dict, Text, Any, Iterable, AsyncGenerator, Awaitable, Tuple
 from tqdm import tqdm
 from ..instances.instance import LLMQueryInstance
 
@@ -50,7 +50,7 @@ class Interface(Registrable):
 
         return results
     
-    async def async_call(self, instances: List[LLMQueryInstance]) -> AsyncGenerator[Dict[Text, Any], None]:
+    async def async_call(self, instances: List[LLMQueryInstance]) -> AsyncGenerator[Tuple[int, Dict[Text, Any]], None]:
         """
         """
         
@@ -59,7 +59,7 @@ class Interface(Registrable):
         for bidx in range(0, len(instances), self.batch_size):
             batch_size = min(self.batch_size, len(instances) - bidx)
 
-            async for _, result in self.llm_chain.abatch_as_completed(
+            async for index, result in self.llm_chain.abatch_as_completed(
                 instances[bidx : bidx + batch_size], self.runnable_config
             ):
-                yield {"raw": result, "parsed": self.output_parser(result)}
+                yield index, {"raw": result, "parsed": self.output_parser(result)}

@@ -66,7 +66,7 @@ class TestLangChainAPICall(TestCase):
             queries = [LLMQueryInstance(id=tidx, input=text) for tidx, text in enumerate(self.test_cases)]
             print("=" * 20)
             print("Async calls:")
-            async for r in self.chat_interface.async_call(queries):
+            async for _, r in self.chat_interface.async_call(queries):
                 print("-" * 20)
                 for fact in r['parsed']:
                     print(fact)
