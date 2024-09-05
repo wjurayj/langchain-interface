@@ -12,11 +12,13 @@ class TestLangChainAPICall(TestCase):
     
     def setUp(self):
         
-        self._model_name = "mistralai/Mistral-7B-Instruct-v0.2"
-        self._api_key = "token-abc123"
+        # self._model_name = "mistralai/Mistral-7B-Instruct-v0.2"
+        # self._api_key = "token-abc123"
+
+        self._model_name = "gpt-4o-mini"
         
         self.chat_interface = ChatInterface(
-            base_url="http://localhost:9871/v1",
+            # base_url="http://localhost:9871/v1",
             model_name=self._model_name,
             batch_size=1,
             max_tokens=256,
@@ -25,20 +27,20 @@ class TestLangChainAPICall(TestCase):
             input_example_prompt="Please decompose the following text into atomic facts: {text}",
             input_parser=lambda x: {"text": x.input},
             output_parser=lambda x: x.strip().split("\n"),
-            api_key=self._api_key
+            # api_key=self._api_key
         )
 
-        self.completion_interface = CompletionInterface(
-            base_url="http://localhost:9871/v1",
-            model_name=self._model_name,
-            batch_size=1,
-            max_tokens=256,
-            instruction_prompt="Please decompose the following text into atomic facts.",
-            input_example_prompt="Text: {text}",
-            input_parser=lambda x: {"text": x.input},
-            output_parser=lambda x: x.strip().split("\n"),
-            api_key=self._api_key,
-        )
+        # self.completion_interface = CompletionInterface(
+        #     # base_url="http://localhost:9871/v1",
+        #     model_name=self._model_name,
+        #     batch_size=1,
+        #     max_tokens=256,
+        #     instruction_prompt="Please decompose the following text into atomic facts.",
+        #     input_example_prompt="Text: {text}",
+        #     input_parser=lambda x: {"text": x.input},
+        #     output_parser=lambda x: x.strip().split("\n"),
+        #     # api_key=self._api_key,
+        # )
         
         self.test_cases = [
             "vLLM provides an HTTP server that implements OpenAI’s Completions and Chat API.",
@@ -74,17 +76,3 @@ class TestLangChainAPICall(TestCase):
             print("=" * 20)
         
         asyncio.run(test_func())
-            
-    def test_completion_interface(self):
-        """Although the completion interface is no longer used, we want to make sure that it works for backward compatibility."""
-
-        queries = [LLMQueryInstance(id=tidx, input=text) for tidx, text in enumerate(self.test_cases)]
-        results = self.completion_interface(queries, silence=True)
-        
-        print("=" * 20)
-        for r in results:
-            print("-" * 20)
-            for fact in r['parsed']:
-                print(fact)
-            print("-" * 20)
-        print("=" * 20)
