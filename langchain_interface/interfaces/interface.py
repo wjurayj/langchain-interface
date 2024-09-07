@@ -1,65 +1,59 @@
-"""Create scorers that gives factuality judgment scores to a given claim and evidence pair.
+"""Define general interface for langgraph execution.
 """
 
 import abc
 import asyncio
 from registrable import Registrable
-from typing import Union, List, Dict, Text, Any, Iterable, AsyncGenerator, Awaitable, Tuple
+from typing import (
+    Union,
+    List,
+    Dict,
+    Text,
+    Any,
+    Optional,
+    Iterable,
+    AsyncGenerator,
+    Awaitable,
+    Tuple
+)
+from langchain_core.runnables.config import RunnableConfig
+from langgraph.graph.state import CompiledStateGraph
 from tqdm import tqdm
-from ..instances.instance import LLMQueryInstance
+from ..states.base_states import BaseState
+from ..instances.instance import LLMQueryInstance, LLMResponse
 
 
 class Interface(Registrable):
-    """ """
-
-    def __init__(self, llm_chain, runnable_config):
+    """
+    """
+    def __init__(
+        self,
+        lang_graph: CompiledStateGraph,
+        runnable_config: RunnableConfig
+    ):
+        """
+        """
         super().__init__()
-
-        self.llm_chain = llm_chain
-        self.runnable_config = runnable_config
-
-    def __call__(
-        self, instances: List[LLMQueryInstance], silence: bool = False
-    ) -> List[Dict[Text, Any]]:
-
-        if silence:
-            instances = [self.input_parser(ins) for ins in instances]
-
-            return [
-                {"raw": item, "parsed": self.output_parser(item)}
-                for item in self.llm_chain.batch(instances, config=self.runnable_config)
-            ]
-
-        instances = [self.input_parser(ins) for ins in instances]
-
-        results = []
-
-        pbar = tqdm(total=len(instances))
-
-        for bidx in range(0, len(instances), self.batch_size):
-            batch_size = min(self.batch_size, len(instances) - bidx)
-            results.extend(
-                [
-                    {"raw": item, "parsed": self.output_parser(item)}
-                    for item in self.llm_chain.batch(
-                        instances[bidx : bidx + batch_size], self.runnable_config
-                    )
-                ]
-            )
-            pbar.update(batch_size)
-
-        return results
+        self._graph = lang_graph
+        self._runnable_config = runnable_config
+        
+    def _parse_input(self, instances: List[LLMQueryInstance]) -> List[BaseState]:
+        """
+        """
+        return [BaseState(responses=ins) for ins in instances]
     
-    async def async_call(self, instances: List[LLMQueryInstance]) -> AsyncGenerator[Tuple[int, Dict[Text, Any]], None]:
+    def _parse_output(self, batched_state: BaseState) -> LLMResponse:
         """
         """
         
-        instances = [self.input_parser(ins) for ins in instances]
+        return [bs['responses'][-1] for bs in batched_state]
         
-        for bidx in range(0, len(instances), self.batch_size):
-            batch_size = min(self.batch_size, len(instances) - bidx)
+    def __call__(
+        self, instances: List[LLMQueryInstance],
+    ) -> List[LLMResponse]:
 
-            async for index, result in self.llm_chain.abatch_as_completed(
-                instances[bidx : bidx + batch_size], self.runnable_config
-            ):
-                yield index, {"raw": result, "parsed": self.output_parser(result)}
+        # instances = [self._parse_input(ins) for ins in instances]
+        instances = self._parse_input(instances)
+        batched_state = self._graph.batch(instances, config=self._runnable_config)
+        
+        return self._parse_output(batched_state)
