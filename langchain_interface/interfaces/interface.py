@@ -20,7 +20,7 @@ from langchain_core.runnables.config import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from tqdm import tqdm
 from ..states.base_states import BaseState
-from ..instances.instance import LLMQueryInstance, LLMResponse
+from ..instances.instance import Instance, LLMQueryInstance, LLMResponse
 
 
 class Interface(Registrable):
@@ -57,3 +57,8 @@ class Interface(Registrable):
         batched_state = self._graph.batch(instances, config=self._runnable_config)
         
         return self._parse_output(batched_state)
+    
+    def _call_chain(self, state) -> Dict[Text, Instance]:
+        """
+        """
+        return self._llm_chain.invoke(state["responses"][-1].to_dict())

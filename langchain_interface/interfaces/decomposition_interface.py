@@ -22,7 +22,7 @@ from langgraph.graph import StateGraph, START, END
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
 from .interface import Interface
-from ..instances.instance import LLMQueryInstance, LLMResponse
+from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
 
 
 @dataclass(frozen=True, eq=True)
@@ -194,15 +194,10 @@ class DecompositionInterface(Interface):
 
             return prompt_template | self.llm | builtin_parser
 
-        llm_chain = create_chain()
-        
-        def _call_chain(state) -> Dict[Text, DecompositionResponse]:
-            """Call the chain and return the output.
-            """
-            return llm_chain.invoke(state["responses"][-1])
+        self._llm_chain = create_chain()
         
         graph_builder = StateGraph(BaseState)
-        graph_builder.add_node("decomposer", _call_chain)
+        graph_builder.add_node("decomposer", self._call_chain)
         graph_builder.add_edge(START, "decomposer")
         graph_builder.add_edge("decomposer", END)
         

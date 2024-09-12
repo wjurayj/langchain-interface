@@ -5,9 +5,10 @@ from unittest import TestCase
 import asyncio
 from langchain_interface.instances import LLMQueryInstance
 from langchain_interface.interfaces.decomposition_interface import DecompositionInterface
+from langchain_interface.interfaces.decontextualization_interface import DecontextualizationInterface, DecontextualizationQueryInstance
 
 
-class TestLangChainAPICall(TestCase):
+class TestDecomposition(TestCase):
     
     def setUp(self):
         
@@ -16,7 +17,7 @@ class TestLangChainAPICall(TestCase):
 
         self._model_name = "gpt-4o-mini"
         
-        self.chat_interface = DecompositionInterface(
+        self._chat_interface = DecompositionInterface(
             model_name=self._model_name,
             max_tokens=256,
             # api_key=self._api_key
@@ -27,11 +28,11 @@ class TestLangChainAPICall(TestCase):
             "U.C.L.A. asked for officers after a clash between pro-Palestinian demonstrators and counterprotesters grew heated overnight, and tensions continued to rise at universities across the country."
         ]
         
-    def test_chat_interface(self):
+    def test_decomposition_interface(self):
         """Test if the API call is successful."""
         
         queries = [LLMQueryInstance(input=text) for tidx, text in enumerate(self.test_cases)]
-        results = self.chat_interface(queries)
+        results = self._chat_interface(queries)
         
         print("=" * 20)
         for r in results:
@@ -39,4 +40,31 @@ class TestLangChainAPICall(TestCase):
             for fact in r.claims:
                 print(fact)
             print("-" * 20)
+        print("=" * 20)
+        
+        
+class TesetDecontextualization(TestCase):
+    
+    def setUp(self):
+        
+        self._model_name = "gpt-4o-mini"
+        
+        self._chat_interface = DecontextualizationInterface(
+            model_name=self._model_name,
+            max_tokens=512,
+        )
+        
+        self.test_cases = [
+            {"input": "It's a great tool for developers.", "context": "vLLM provides an HTTP server that implements OpenAI’s Completions and Chat API. It's a great tool for developers."},
+            {"input": "That girl is a genius.", "context": "U.C.L.A. asked for officers after a clash between pro-Palestinian girl and counterprotesters grew heated overnight, and tensions continued to rise at universities across the country."}
+        ]
+        
+    def test_decontextualization_interface(self):
+
+        queries = [DecontextualizationQueryInstance(**tc) for tc in self.test_cases]
+        results = self._chat_interface(queries)
+        
+        for r in results:
+            print("-" * 20)
+            print(r.revised)
         print("=" * 20)

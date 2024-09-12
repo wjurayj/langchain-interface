@@ -1,2 +1,3 @@
 from .interface import Interface
 from .decomposition_interface import DecompositionInterface
+from .decontextualization_interface import DecontextualizationInterface
