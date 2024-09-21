@@ -3,17 +3,11 @@
 
 from dataclasses import dataclass
 from typing import Union, Text, List, Dict, Optional, Callable, Any
-from dataclasses import asdict
-from overrides import overrides
-from langchain_openai import ChatOpenAI
-from tqdm import tqdm
 from ..states.base_states import BaseState
 
-# from langchain_core.prompts import FewShotPromptTemplate, PromptTemplate
 from langchain_core.runnables.config import RunnableConfig
 from langchain.prompts import (
     ChatPromptTemplate,
-    ChatMessagePromptTemplate,
     FewShotChatMessagePromptTemplate,
 )
 from langchain_core.output_parsers import BaseOutputParser
@@ -21,7 +15,7 @@ from langgraph.graph import StateGraph, START, END
 
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
-from .interface import Interface
+from .step import Step
 from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
 
 
@@ -29,21 +23,21 @@ from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
 class DecompositionResponse(LLMResponse):
     claims: List[Text]
 
-class DecompositionOutputParser(BaseOutputParser[Dict]):
+class DecompositionOutputParser(BaseOutputParser[DecompositionResponse]):
     """Parse the output of the decomposition model.
     """
     def parse(self, text: Text) -> Dict:
         cleaned_text = text.strip()
         items = cleaned_text.split("\n")
-        return {"responses": DecompositionResponse(messages=text, claims=[item.replace('- ', "") for item in items])}
+        return DecompositionResponse(messages=text, claims=[item.replace('- ', "") for item in items])
     
     @property
     def _type(self) -> str:
         return "decomposition_output_parser"
     
 
-@Interface.register("decomposition-interface")
-class DecompositionInterface(Interface):
+@Step.register("decomposition-interface")
+class DecompositionStep(Step):
     """Break sentence into independent facts.
     """
     def __init__(
@@ -60,33 +54,8 @@ class DecompositionInterface(Interface):
         """Instruction prompt will always begin with the
         human prompt message, and alternate until the end.
         """
-        self.model_name = model_name
-        self.base_url = base_url
-        self.temperature = temperature
-        self.top_p = top_p
-
-        self.model_kwargs = model_kwargs
-        self._additional_params = {}
-
-        if api_key is not None:
-            self._additional_params["api_key"] = api_key
-
-        self.llm = ChatOpenAI(
-            temperature=temperature,
-            top_p=top_p,
-            model=model_name,
-            model_kwargs=self.model_kwargs,
-            max_tokens=max_tokens,
-            verbose=True,
-            base_url=self.base_url,
-            **self._additional_params
-        )
-        runnable_config = RunnableConfig(
-            max_concurrency=max_concurrency,
-        )
-
+        
         example_selector = ConstantExampleSelector()
-
         examples = [
             {
                 "input": "He made his acting debut in the film The Moon is the Sun’s Dream (1992), and continued to appear in small and supporting roles throughout the 1990s.",
@@ -170,7 +139,9 @@ class DecompositionInterface(Interface):
             example_selector.add_example(example)
 
         def create_chain():
-            """Create a callable chain for the model."""
+            """
+            input: input text to be decomposed.
+            """
 
             input_example_prompt = "Please breakdown the following sentence into independent facts: {input}"
             example_prompt = ChatPromptTemplate.from_messages([
@@ -192,15 +163,23 @@ class DecompositionInterface(Interface):
 
             builtin_parser = DecompositionOutputParser()
 
-            return prompt_template | self.llm | builtin_parser
+            return prompt_template | self._llm | builtin_parser
 
-        self._llm_chain = create_chain()
+        super().__init__(
+            llm_chain_creator=create_chain,
+            model_name=model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            base_url=base_url,
+            api_key=api_key,
+            model_kwargs=model_kwargs,
+            max_concurrency=max_concurrency,
+        )
+
+        # graph_builder = StateGraph(BaseState)
+        # graph_builder.add_node("decomposer", self._call_chain)
+        # graph_builder.add_edge(START, "decomposer")
+        # graph_builder.add_edge("decomposer", END)
         
-        graph_builder = StateGraph(BaseState)
-        graph_builder.add_node("decomposer", self._call_chain)
-        graph_builder.add_edge(START, "decomposer")
-        graph_builder.add_edge("decomposer", END)
-        
-        graph = graph_builder.compile()
-        
-        super().__init__(lang_graph=graph, runnable_config=runnable_config)
+        # graph = graph_builder.compile()

@@ -24,7 +24,7 @@ from langgraph.graph import StateGraph, START, END
 
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
-from .interface import Interface
+from .step import Step
 from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
 
 
@@ -43,20 +43,13 @@ Instructions:
 
 
 @dataclass(frozen=True, eq=True)
-class DecontextualizationQueryInstance(LLMQueryInstance):
-    """Instance for decontextualization.
-    """
-    context: Text
-    
-    
-@dataclass(frozen=True, eq=True)
 class DecontextualizationResponse(LLMResponse):
     """Response for decontextualization.
     """
     revised: Optional[Text]
     
     
-class DecontextualizatinoOutputParser(BaseOutputParser[Dict]):
+class DecontextualizationOutputParser(BaseOutputParser[DecontextualizationResponse]):
     """Parse the output of the decontextualization model.
     """
     def parse(self, text: Text) -> Dict:
@@ -71,15 +64,15 @@ class DecontextualizatinoOutputParser(BaseOutputParser[Dict]):
         else:
             revised = match.group(1).strip()
         
-        return {"responses": DecontextualizationResponse(messages=text, revised=revised)}
+        return DecontextualizationResponse(messages=text, revised=revised)
     
     @property
     def _type(self) -> str:
         return "decontextualization_output_parser"
 
 
-@Interface.register("decontextualization-interface")
-class DecontextualizationInterface(Interface):
+@Step.register("decontextualization-interface")
+class DecontextualizationStep(Step):
     """
     """
     def __init__(
@@ -95,33 +88,8 @@ class DecontextualizationInterface(Interface):
     ):
         """
         """
-        self.model_name = model_name
-        self.base_url = base_url
-        self.temperature = temperature
-        self.top_p = top_p
-
-        self.model_kwargs = model_kwargs
-        self._additional_params = {}
-
-        if api_key is not None:
-            self._additional_params["api_key"] = api_key
-
-        self.llm = ChatOpenAI(
-            temperature=temperature,
-            top_p=top_p,
-            model=model_name,
-            model_kwargs=self.model_kwargs,
-            max_tokens=max_tokens,
-            verbose=True,
-            base_url=self.base_url,
-            **self._additional_params
-        )
-        runnable_config = RunnableConfig(
-            max_concurrency=max_concurrency,
-        )
         
         example_selector = ConstantExampleSelector()
-        
         examples = [
             {
                 "input": "Acorns is a company.",
@@ -153,7 +121,9 @@ class DecontextualizationInterface(Interface):
             example_selector.add_example(example)
 
         def create_chain():
-            """Create a proper chain for the decontextualization task.
+            """
+            input: statement to be revised
+            context: context of the statement to revise with
             """
 
             input_example_prompt = "STATEMENT:\n{input}\n\nRESPONSE:\n{context}"
@@ -178,17 +148,18 @@ class DecontextualizationInterface(Interface):
                 ]
             )
 
-            builtin_parser = DecontextualizatinoOutputParser()
+            builtin_parser = DecontextualizationOutputParser()
             
-            return prompt_template | self.llm | builtin_parser
+            return prompt_template | self._llm | builtin_parser
         
-        self._llm_chain = create_chain()
-        
-        graph_builder = StateGraph(BaseState)
-        graph_builder.add_node("decontextualizer", self._call_chain)
-        graph_builder.add_edge(START, "decontextualizer")
-        graph_builder.add_edge("decontextualizer", END)
-        
-        graph = graph_builder.compile()
-        
-        super().__init__(lang_graph=graph, runnable_config=runnable_config)
+        super().__init__(
+            llm_chain_creator=create_chain,
+            model_name=model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            base_url=base_url,
+            api_key=api_key,
+            model_kwargs=model_kwargs,
+            max_concurrency=max_concurrency,
+        )

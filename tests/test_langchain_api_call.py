@@ -2,22 +2,17 @@
 client is not possible to call the API and get results.
 """
 from unittest import TestCase
-import asyncio
-from langchain_interface.instances import LLMQueryInstance
-from langchain_interface.interfaces.decomposition_interface import DecompositionInterface
-from langchain_interface.interfaces.decontextualization_interface import DecontextualizationInterface, DecontextualizationQueryInstance
+from langchain_interface.steps import DecompositionStep
+from langchain_interface.steps import DecontextualizationStep
 
 
 class TestDecomposition(TestCase):
     
     def setUp(self):
         
-        # self._model_name = "mistralai/Mistral-7B-Instruct-v0.2"
-        # self._api_key = "token-abc123"
-
         self._model_name = "gpt-4o-mini"
         
-        self._chat_interface = DecompositionInterface(
+        self._chat_interface = DecompositionStep(
             model_name=self._model_name,
             max_tokens=256,
             # api_key=self._api_key
@@ -31,11 +26,12 @@ class TestDecomposition(TestCase):
     def test_decomposition_interface(self):
         """Test if the API call is successful."""
         
-        queries = [LLMQueryInstance(input=text) for tidx, text in enumerate(self.test_cases)]
+        queries = [{"input": text} for tidx, text in enumerate(self.test_cases)]
         results = self._chat_interface(queries)
         
         print("=" * 20)
         for r in results:
+            print(r)
             print("-" * 20)
             for fact in r.claims:
                 print(fact)
@@ -49,7 +45,7 @@ class TesetDecontextualization(TestCase):
         
         self._model_name = "gpt-4o-mini"
         
-        self._chat_interface = DecontextualizationInterface(
+        self._chat_interface = DecontextualizationStep(
             model_name=self._model_name,
             max_tokens=512,
         )
@@ -61,7 +57,7 @@ class TesetDecontextualization(TestCase):
         
     def test_decontextualization_interface(self):
 
-        queries = [DecontextualizationQueryInstance(**tc) for tc in self.test_cases]
+        queries = self.test_cases
         results = self._chat_interface(queries)
         
         for r in results:
