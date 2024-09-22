@@ -25,7 +25,7 @@ from langgraph.graph import StateGraph, START, END
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
 from .step import Step
-from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
+from ..instances.instance import LLMResponse, Instance
 
 
 DECONTEXTUALIZE_PROMPT = """Vague references include but are not limited to:
@@ -71,7 +71,7 @@ class DecontextualizationOutputParser(BaseOutputParser[DecontextualizationRespon
         return "decontextualization_output_parser"
 
 
-@Step.register("decontextualization-interface")
+@Step.register("decontextualization-step")
 class DecontextualizationStep(Step):
     """
     """

@@ -3,7 +3,6 @@
 
 from dataclasses import dataclass
 from typing import Union, Text, List, Dict, Optional, Callable, Any
-from ..states.base_states import BaseState
 
 from langchain_core.runnables.config import RunnableConfig
 from langchain.prompts import (
@@ -11,12 +10,11 @@ from langchain.prompts import (
     FewShotChatMessagePromptTemplate,
 )
 from langchain_core.output_parsers import BaseOutputParser
-from langgraph.graph import StateGraph, START, END
 
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
 from .step import Step
-from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
+from ..instances.instance import LLMResponse, Instance
 
 
 @dataclass(frozen=True, eq=True)
@@ -36,7 +34,7 @@ class DecompositionOutputParser(BaseOutputParser[DecompositionResponse]):
         return "decomposition_output_parser"
     
 
-@Step.register("decomposition-interface")
+@Step.register("decomposition-step")
 class DecompositionStep(Step):
     """Break sentence into independent facts.
     """

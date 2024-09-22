@@ -19,7 +19,7 @@ from typing import (
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables.config import RunnableConfig
 from ..states.base_states import BaseState
-from ..instances.instance import Instance, LLMQueryInstance, LLMResponse
+from ..instances.instance import Instance, LLMResponse
 
 
 class Step(Registrable):
