@@ -5,6 +5,7 @@ import abc
 import asyncio
 from registrable import Registrable
 from typing import (
+    Callable,
     Union,
     List,
     Dict,
@@ -16,73 +17,45 @@ from typing import (
     Awaitable,
     Tuple
 )
-from langchain_openai import ChatOpenAI
-from langchain_core.runnables.config import RunnableConfig
+# from langchain_openai import ChatOpenAI
+# from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.base import Runnable
+from langchain_core.language_models.base import BaseLanguageModel
 from ..states.base_states import BaseState
 from ..instances.instance import Instance, LLMResponse
 
 
-class Step(Registrable):
-    """
-    """
-    def __init__(
-        self,
-        llm_chain_creator,
-        model_name: Text,
-        max_tokens: Optional[int] = -1,
-        temperature: float = 0,
-        top_p: float = 1,
-        base_url: Optional[Text] = None,
-        api_key: Optional[Text] = None,
-        model_kwargs: Dict[Text, Any] = {},
-        max_concurrency: int = 4,
-    ):
-        """
-        """
+class Step(Registrable, abc.ABC):
+    def __init__(self):
         super().__init__()
-        
-        self.model_name = model_name
-        self.base_url = base_url
-        self.temperature = temperature
-        self.top_p = top_p
 
-        self.model_kwargs = model_kwargs
-        self._additional_params = {}
-
-        if api_key is not None:
-            self._additional_params["api_key"] = api_key
-
-        self._llm = ChatOpenAI(
-            temperature=temperature,
-            top_p=top_p,
-            model=model_name,
-            model_kwargs=self.model_kwargs,
-            max_tokens=max_tokens,
-            verbose=True,
-            base_url=self.base_url,
-            **self._additional_params
-        )
-        self._runnable_config = RunnableConfig(
-            max_concurrency=max_concurrency,
-        )
-
-        self._llm_chain = llm_chain_creator()
-        
-    def __call__(
-        self, params: Union[Dict[Text, Any], List[Dict[Text, Any]]]
-    ) -> Union[List[LLMResponse], LLMResponse]:
+    @abc.abstractmethod
+    def get_prompt_template(self) -> Runnable:
+        """ """
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def get_output_parser(self) -> Runnable:
+        """ """
+        raise NotImplementedError   
+    
+    def chain_llm(self, llm: BaseLanguageModel) -> Runnable:
+        """ Provided an LLM, chain it with the current step's prompt template and output parser. """
+        return self.get_prompt_template() | llm | self.get_output_parser()
+    
+    def induce_stated_callable(
+        self, 
+        llm: BaseLanguageModel,
+        parse_input: Callable[[BaseState], Dict[Text, Any]],
+        parse_output: Callable[[LLMResponse], Dict[Text, Any]],
+    ) -> Callable[[BaseState], BaseState]:
         """ """
         
-        return self._call_chain(params)
-    
-    def _call_chain(
-        self,
-        params: Union[Dict[Text, Any], List[Dict[Text, Any]]]
-    ) -> Union[LLMResponse, List[LLMResponse]]:
-        """
-        """
+        chained_runnable = self.chain_llm(llm)
+        def _callable(state: BaseState) -> BaseState:
+            """ """
+            inputs = parse_input(state)
+            output = chained_runnable.invoke(inputs)
+            return parse_output(output)
         
-        if isinstance(params, list):
-            return self._llm_chain.batch(params)
-        
-        return self._llm_chain.invoke(params)
+        return _callable

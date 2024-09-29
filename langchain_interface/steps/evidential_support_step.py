@@ -5,11 +5,15 @@ from overrides import overrides
 from typing import Union, Text, List, Dict, Optional, Callable, Any, Literal
 
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.base import Runnable
 from langchain.prompts import (
     ChatPromptTemplate,
     FewShotChatMessagePromptTemplate,
 )
 from langchain_core.output_parsers import BaseOutputParser
+from .step import (
+    Step
+)
 import re
 
 # TODO: use customer downloaded examples for example selector
@@ -21,6 +25,7 @@ from ..instances.instance import LLMResponse, Instance
 @dataclass(frozen=True, eq=True)
 class EvidentialSupportResponse(LLMResponse):
     label: Literal["Entailment", "Contradiction", "Neutral"]
+    reasoning: Optional[Text]
     premise: Optional[Text] = None
     hypothesis: Optional[Text] = None
     
@@ -32,8 +37,9 @@ class EvidentialSupportOutputParser(BaseOutputParser[EvidentialSupportResponse])
         cleaned_text = text.strip()
         
         # find ``` ``` block
-        match = re.search(r"```(.*?)```", cleaned_text, re.DOTALL)
-        match_text = match.group(1)
+        match = re.match(r"(.*?)```(.*?)```", cleaned_text, re.DOTALL)
+        reasoning = match.group(1).strip()
+        match_text = match.group(2)
         submatch = re.search(r"Label: (.*)", match_text.strip(), re.DOTALL)
         submatch_text = submatch.group(1)
         
@@ -42,29 +48,23 @@ class EvidentialSupportOutputParser(BaseOutputParser[EvidentialSupportResponse])
         
         return EvidentialSupportResponse(
             messages=text,
+            reasoning=reasoning,
             label=label
         )
     
     @property
     def _type(self) -> str:
-        return "evidential_support_output_parser"
+        return "evidential-support"
     
-    
-@Step.register("evidential-support-step")
+
+@Step.register("evidential-support")
 class EvidentialSupportStep(Step):
-    def __init__(
-        self,
-        model_name: Text,
-        max_tokens: Optional[int] = -1,
-        temperature: float = 0,
-        top_p: float = 1,
-        base_url: Optional[Text] = None,
-        api_key: Optional[Text] = None,
-        model_kwargs: Dict[Text, Any] = {},
-        max_concurrency: int = 4,
-    ):
+    @overrides
+    def get_prompt_template(self) -> Runnable:
+        """
+        input: input text to be decomposed.
+        """
         
-        # create the llm_chain here
         example_selector = ConstantExampleSelector()
         examples = [
             {
@@ -95,81 +95,33 @@ class EvidentialSupportStep(Step):
         
         for example in examples:
             example_selector.add_example(example)
-            
-        def create_chain():
-            """
-            input: input text to be decomposed.
-            """
+        
 
-            instruction = "Does the premise entail the hypothesis? Respond in one of `[\"entailment\", \"neutral\", \"contradiction\"]`:"
-            input_example_prompt = "Premise: {premise}\nHypothesis: {hypothesis}"
-            output_example_prompt = "{reasoning}\n```\nLabel: {label}\n```"
-            
-            example_prompt = ChatPromptTemplate.from_messages([
+        instruction = "Does the premise entail the hypothesis? Respond in one of `[\"entailment\", \"neutral\", \"contradiction\"]`:"
+        input_example_prompt = "Premise: {premise}\nHypothesis: {hypothesis}"
+        output_example_prompt = "{reasoning}\n```\nLabel: {label}\n```"
+        
+        example_prompt = ChatPromptTemplate.from_messages([
+            ("human", input_example_prompt),
+            ("ai", output_example_prompt),
+        ])
+
+        fewshot_prompt_template = FewShotChatMessagePromptTemplate(
+            example_prompt=example_prompt,
+            example_selector=example_selector,
+        )
+
+        prompt_template = ChatPromptTemplate.from_messages(
+            [
+                ("human", instruction),
+                ("ai", "Please provide the premise and hypothesis so I can evaluate them and respond accordingly."),
+                fewshot_prompt_template,
                 ("human", input_example_prompt),
-                ("ai", output_example_prompt),
-            ])
-
-            fewshot_prompt_template = FewShotChatMessagePromptTemplate(
-                example_prompt=example_prompt,
-                example_selector=example_selector,
-            )
-
-            prompt_template = ChatPromptTemplate.from_messages(
-                [
-                    ("human", instruction),
-                    ("ai", "Please provide the premise and hypothesis so I can evaluate them and respond accordingly."),
-                    fewshot_prompt_template,
-                    ("human", input_example_prompt),
-                ]
-            )
-
-            builtin_parser = EvidentialSupportOutputParser()
-
-            return prompt_template | self._llm | builtin_parser
-        
-        super().__init__(
-            llm_chain_creator=create_chain,
-            model_name=model_name,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            base_url=base_url,
-            api_key=api_key,
-            model_kwargs=model_kwargs,
-            max_concurrency=max_concurrency,
-        )
-        
-    @overrides
-    def _call_chain(
-        self,
-        params: Union[Dict[Text, Any], List[Dict[Text, Any]]]
-    ) -> Union[LLMResponse, List[LLMResponse]]:
-        """Append additional information to the response.
-        """
-        
-        if isinstance(params, list):
-            responses = self._llm_chain.batch(params)
-            responses = [
-                EvidentialSupportResponse(
-                    messages=r.messages,
-                    label=r.label,
-                    premise=p["premise"],
-                    hypothesis=p["hypothesis"]
-                )
-                for r, p in zip(responses, params)
             ]
-                
-            return responses
-        
-        response = self._llm_chain.invoke(params)
-        # response.premise = params["premise"]
-        # response.hypothesis = params["hypothesis"]
-        response = EvidentialSupportOutputParser(
-            messages=response.messages,
-            label=response.label,
-            premise=params["premise"],
-            hypothesis=params["hypothesis"]
         )
-        
-        return response
+
+        return prompt_template
+    
+    @overrides
+    def get_output_parser(self) -> Runnable:
+        return EvidentialSupportOutputParser()

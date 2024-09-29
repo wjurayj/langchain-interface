@@ -2,9 +2,11 @@
 """
 
 from dataclasses import dataclass
+from overrides import overrides
 from typing import Union, Text, List, Dict, Optional, Callable, Any
 
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.base import Runnable
 from langchain.prompts import (
     ChatPromptTemplate,
     FewShotChatMessagePromptTemplate,
@@ -19,7 +21,7 @@ from ..instances.instance import LLMResponse, Instance
 
 @dataclass(frozen=True, eq=True)
 class DecompositionResponse(LLMResponse):
-    claims: List[Text]
+    claims: Text
 
 class DecompositionOutputParser(BaseOutputParser[DecompositionResponse]):
     """Parse the output of the decomposition model.
@@ -31,28 +33,19 @@ class DecompositionOutputParser(BaseOutputParser[DecompositionResponse]):
     
     @property
     def _type(self) -> str:
-        return "decomposition_output_parser"
+        return "decompose"
     
 
-@Step.register("decomposition-step")
+@Step.register("decompose")
 class DecompositionStep(Step):
     """Break sentence into independent facts.
     """
-    def __init__(
-        self,
-        model_name: Text,
-        max_tokens: Optional[int] = -1,
-        temperature: float = 0,
-        top_p: float = 1,
-        base_url: Optional[Text] = None,
-        api_key: Optional[Text] = None,
-        model_kwargs: Dict[Text, Any] = {},
-        max_concurrency: int = 4,
-    ):
-        """Instruction prompt will always begin with the
-        human prompt message, and alternate until the end.
+    @overrides
+    def get_prompt_template(self) -> Runnable:
         """
-        
+        input: input text to be decomposed.
+        """
+
         example_selector = ConstantExampleSelector()
         examples = [
             {
@@ -121,7 +114,7 @@ class DecompositionStep(Step):
                     "- Love and Destiny premiered in 2019."
             },
             {
-                 "input": "During his professional career, McCoy played for the Broncos, the San Diego Chargers, the Minnesota Vikings, and the Jacksonville Jaguars.",
+                "input": "During his professional career, McCoy played for the Broncos, the San Diego Chargers, the Minnesota Vikings, and the Jacksonville Jaguars.",
                     "output": "- McCoy played for the Broncos.\n"
                         "- McCoy played for the Broncos during his professional career.\n"
                         "- McCoy played for the San Diego Chargers.\n"
@@ -136,48 +129,26 @@ class DecompositionStep(Step):
         for example in examples:
             example_selector.add_example(example)
 
-        def create_chain():
-            """
-            input: input text to be decomposed.
-            """
+        input_example_prompt = "Please breakdown the following sentence into independent facts: {input}"
+        example_prompt = ChatPromptTemplate.from_messages([
+            ("human", input_example_prompt),
+            ("ai", "{output}"),
+        ])
 
-            input_example_prompt = "Please breakdown the following sentence into independent facts: {input}"
-            example_prompt = ChatPromptTemplate.from_messages([
-                ("human", input_example_prompt),
-                ("ai", "{output}"),
-            ])
-
-            fewshot_prompt_template = FewShotChatMessagePromptTemplate(
-                example_prompt=example_prompt,
-                example_selector=example_selector,
-            )
-
-            prompt_template = ChatPromptTemplate.from_messages(
-                [
-                    fewshot_prompt_template,
-                    ("human", input_example_prompt),
-                ]
-            )
-
-            builtin_parser = DecompositionOutputParser()
-
-            return prompt_template | self._llm | builtin_parser
-
-        super().__init__(
-            llm_chain_creator=create_chain,
-            model_name=model_name,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            base_url=base_url,
-            api_key=api_key,
-            model_kwargs=model_kwargs,
-            max_concurrency=max_concurrency,
+        fewshot_prompt_template = FewShotChatMessagePromptTemplate(
+            example_prompt=example_prompt,
+            example_selector=example_selector,
         )
 
-        # graph_builder = StateGraph(BaseState)
-        # graph_builder.add_node("decomposer", self._call_chain)
-        # graph_builder.add_edge(START, "decomposer")
-        # graph_builder.add_edge("decomposer", END)
-        
-        # graph = graph_builder.compile()
+        prompt_template = ChatPromptTemplate.from_messages(
+            [
+                fewshot_prompt_template,
+                ("human", input_example_prompt),
+            ]
+        )
+
+        return prompt_template
+    
+    @overrides
+    def get_output_parser(self) -> Runnable:
+        return DecompositionOutputParser()
