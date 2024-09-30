@@ -4,6 +4,7 @@ try:
     import ujson as json
 except ImportError:
     import json
+import ast
 from dataclasses import dataclass
 from overrides import overrides
 from typing import Union, Text, List, Dict, Optional, Callable, Any
@@ -30,13 +31,32 @@ class AnchoredClusteringResponse(LLMResponse):
     
 class AnchoredClusteringOutputParser(BaseOutputParser[AnchoredClusteringResponse]):
     """ """
-
+    
     @overrides
     def parse(self, text: Text) -> LLMResponse:
-        # print(text)
-        print(text)
-        matched = re.search(r"```python\s*increments = (.*)\s*```", text)
-        items = [it.strip("'\"") for it in matched.group(1).strip()[1:-1].split(", ")]
+        
+        all_matched = re.findall(r"```python(.*?)```", text, re.DOTALL)
+
+        items = None
+        
+        for matched in all_matched:
+            try:
+                submatch = re.search(r"increments = (\[.*?\])\s", matched, re.DOTALL)
+                if submatch is not None:
+                    items = ast.literal_eval(submatch.group(1))
+                # submatch = re.search(r"(\[.*?\])", matched, re.DOTALL)
+                # items = ast.literal_eval(submatch.group(1))
+                break
+            except Exception:
+                continue
+            
+        if items is None:
+            print(all_matched[-1])
+            submatch = re.search(r"\[.*?\]\s", all_matched[-1], re.DOTALL)
+            try:
+                items = ast.literal_eval(submatch.group(0))
+            except Exception:
+                print('=' * 50 + '\n' + text + '\n' + '=' * 50)
         
         return AnchoredClusteringResponse(
             increments=items,

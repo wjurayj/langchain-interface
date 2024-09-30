@@ -29,12 +29,18 @@ class AnswerShorteningOutputParser(BaseOutputParser[AnswerShorteningResponse]):
 
     @overrides
     def parse(self, text: Text) -> LLMResponse:
-        matched = re.match(r"```\n(.*)\n```", text)
-        return AnswerShorteningResponse(
-            short_answer=matched.group(1).strip(),
-            messages=text
-        )
-        
+        matched = re.search(r"```\n(.*)\n```", text, re.DOTALL)
+        try:
+            return AnswerShorteningResponse(
+                short_answer=matched.group(1).strip(),
+                messages=text
+            )
+        except AttributeError:
+            return AnswerShorteningResponse(
+                short_answer=text,
+                messages=text
+            )
+    
     @property
     def _type(self) -> Text:
         return "answer-shortening-output-parser"
