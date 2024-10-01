@@ -1,1 +1,1 @@
-from .instance import Instance, LLMQueryInstance
+from .instance import Instance, LLMResponse

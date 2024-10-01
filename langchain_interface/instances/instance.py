@@ -30,18 +30,6 @@ class Instance(abc.ABC):
 
 
 @dataclass(frozen=True, eq=True)
-class LLMQueryInstance(Instance):
-    """All custom LLMQueryInstance should inherit
-    from this very basic instance, so that it is compatible
-    with the given scorer.
-    """
-    input: Text
-
-    def __hash__(self) -> int:
-        return hash(self.input)
-    
-    
-@dataclass(frozen=True, eq=True)
 class LLMResponse(Instance):
     """All custom LLMQueryInstance should inherit
     from this very basic instance, so that it is compatible
@@ -54,3 +42,6 @@ class LLMResponse(Instance):
     
     def __str__(self) -> Text:
         return self.messages
+    
+    def __dict__(self) -> Dict[Text, Any]:
+        return self.to_dict()

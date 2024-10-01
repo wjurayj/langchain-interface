@@ -4,28 +4,24 @@ a single claim from a given context.
 
 
 from dataclasses import dataclass
-from typing import Union, Text, List, Dict, Optional, Callable, Any
-from dataclasses import asdict
 from overrides import overrides
-from langchain_openai import ChatOpenAI
-from tqdm import tqdm
-from ..states.base_states import BaseState
+from typing import Union, Text, List, Dict, Optional, Callable, Any
 import re
 
-# from langchain_core.prompts import FewShotPromptTemplate, PromptTemplate
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.base import Runnable
 from langchain.prompts import (
     ChatPromptTemplate,
-    ChatMessagePromptTemplate,
     FewShotChatMessagePromptTemplate,
 )
 from langchain_core.output_parsers import BaseOutputParser
-from langgraph.graph import StateGraph, START, END
 
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
-from .interface import Interface
-from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
+from .step import (
+    Step
+)
+from ..instances.instance import LLMResponse
 
 
 DECONTEXTUALIZE_PROMPT = """Vague references include but are not limited to:
@@ -43,20 +39,13 @@ Instructions:
 
 
 @dataclass(frozen=True, eq=True)
-class DecontextualizationQueryInstance(LLMQueryInstance):
-    """Instance for decontextualization.
-    """
-    context: Text
-    
-    
-@dataclass(frozen=True, eq=True)
 class DecontextualizationResponse(LLMResponse):
     """Response for decontextualization.
     """
-    revised: Optional[Text]
+    revised: Text
     
     
-class DecontextualizatinoOutputParser(BaseOutputParser[Dict]):
+class DecontextualizationOutputParser(BaseOutputParser[DecontextualizationResponse]):
     """Parse the output of the decontextualization model.
     """
     def parse(self, text: Text) -> Dict:
@@ -71,57 +60,24 @@ class DecontextualizatinoOutputParser(BaseOutputParser[Dict]):
         else:
             revised = match.group(1).strip()
         
-        return {"responses": DecontextualizationResponse(messages=text, revised=revised)}
+        return DecontextualizationResponse(messages=text, revised=revised)
     
     @property
     def _type(self) -> str:
         return "decontextualization_output_parser"
 
 
-@Interface.register("decontextualization-interface")
-class DecontextualizationInterface(Interface):
-    """
-    """
-    def __init__(
-        self,
-        model_name: Text,
-        max_tokens: Optional[int] = -1,
-        temperature: float = 0,
-        top_p: float = 1,
-        base_url: Optional[Text] = None,
-        api_key: Optional[Text] = None,
-        model_kwargs: Dict[Text, Any] = {},
-        max_concurrency: int = 4,
-    ):
+@Step.register("decontextualize")
+class DecontextualizationStep(Step):
+    
+    @overrides
+    def get_prompt_template(self) -> Runnable:
         """
+        input: statement to be revised
+        context: context of the statement to revise with
         """
-        self.model_name = model_name
-        self.base_url = base_url
-        self.temperature = temperature
-        self.top_p = top_p
-
-        self.model_kwargs = model_kwargs
-        self._additional_params = {}
-
-        if api_key is not None:
-            self._additional_params["api_key"] = api_key
-
-        self.llm = ChatOpenAI(
-            temperature=temperature,
-            top_p=top_p,
-            model=model_name,
-            model_kwargs=self.model_kwargs,
-            max_tokens=max_tokens,
-            verbose=True,
-            base_url=self.base_url,
-            **self._additional_params
-        )
-        runnable_config = RunnableConfig(
-            max_concurrency=max_concurrency,
-        )
         
         example_selector = ConstantExampleSelector()
-        
         examples = [
             {
                 "input": "Acorns is a company.",
@@ -152,43 +108,31 @@ class DecontextualizationInterface(Interface):
         for example in examples:
             example_selector.add_example(example)
 
-        def create_chain():
-            """Create a proper chain for the decontextualization task.
-            """
 
-            input_example_prompt = "STATEMENT:\n{input}\n\nRESPONSE:\n{context}"
-            output_example_prompt = "REASONING:\n{reasoning}\n\nREVISED STATEMENT:\n```\n{output}\n```"
+        input_example_prompt = "STATEMENT:\n{input}\n\nRESPONSE:\n{context}"
+        output_example_prompt = "REASONING:\n{reasoning}\n\nREVISED STATEMENT:\n```\n{output}\n```"
 
-            example_prompt = ChatPromptTemplate.from_messages([
+        example_prompt = ChatPromptTemplate.from_messages([
+            ("human", input_example_prompt),
+            ("ai", output_example_prompt),
+        ])
+        
+        fewshot_prompt_template = FewShotChatMessagePromptTemplate(
+            example_prompt=example_prompt,
+            example_selector=example_selector,
+        )
+
+        prompt_template = ChatPromptTemplate.from_messages(
+            [
+                ("human", DECONTEXTUALIZE_PROMPT),
+                ("ai", "Sure, please provide me with statements you want me to revise."),
+                fewshot_prompt_template,
                 ("human", input_example_prompt),
-                ("ai", output_example_prompt),
-            ])
-            
-            fewshot_prompt_template = FewShotChatMessagePromptTemplate(
-                example_prompt=example_prompt,
-                example_selector=example_selector,
-            )
-
-            prompt_template = ChatPromptTemplate.from_messages(
-                [
-                    ("human", DECONTEXTUALIZE_PROMPT),
-                    ("ai", "Sure, please provide me with statements you want me to revise."),
-                    fewshot_prompt_template,
-                    ("human", input_example_prompt),
-                ]
-            )
-
-            builtin_parser = DecontextualizatinoOutputParser()
-            
-            return prompt_template | self.llm | builtin_parser
+            ]
+        )
         
-        self._llm_chain = create_chain()
-        
-        graph_builder = StateGraph(BaseState)
-        graph_builder.add_node("decontextualizer", self._call_chain)
-        graph_builder.add_edge(START, "decontextualizer")
-        graph_builder.add_edge("decontextualizer", END)
-        
-        graph = graph_builder.compile()
-        
-        super().__init__(lang_graph=graph, runnable_config=runnable_config)
+        return prompt_template
+    
+    @overrides
+    def get_output_parser(self) -> Runnable:
+        return DecontextualizationOutputParser()

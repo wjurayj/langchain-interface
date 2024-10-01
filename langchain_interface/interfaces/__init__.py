@@ -1,3 +1,1 @@
-from .interface import Interface
-from .decomposition_interface import DecompositionInterface
-from .decontextualization_interface import DecontextualizationInterface
+from .self_refine.general_claim_revision_interface import GeneralClaimRevisionInterface

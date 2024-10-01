@@ -2,7 +2,6 @@
 """
 from typing import List, Text, Any, Dict
 from overrides import overrides
-from ..instances.instance import LLMQueryInstance
 from .example_selector import ExampleSelector
 
 

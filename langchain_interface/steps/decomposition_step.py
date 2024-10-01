@@ -2,91 +2,51 @@
 """
 
 from dataclasses import dataclass
-from typing import Union, Text, List, Dict, Optional, Callable, Any
-from dataclasses import asdict
 from overrides import overrides
-from langchain_openai import ChatOpenAI
-from tqdm import tqdm
-from ..states.base_states import BaseState
+from typing import Union, Text, List, Dict, Optional, Callable, Any
 
-# from langchain_core.prompts import FewShotPromptTemplate, PromptTemplate
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.base import Runnable
 from langchain.prompts import (
     ChatPromptTemplate,
-    ChatMessagePromptTemplate,
     FewShotChatMessagePromptTemplate,
 )
 from langchain_core.output_parsers import BaseOutputParser
-from langgraph.graph import StateGraph, START, END
 
 # TODO: use customer downloaded examples for example selector
 from ..example_selectors import ConstantExampleSelector
-from .interface import Interface
-from ..instances.instance import LLMQueryInstance, LLMResponse, Instance
+from .step import Step
+from ..instances.instance import LLMResponse, Instance
 
 
 @dataclass(frozen=True, eq=True)
 class DecompositionResponse(LLMResponse):
-    claims: List[Text]
+    claims: Text
 
-class DecompositionOutputParser(BaseOutputParser[Dict]):
+class DecompositionOutputParser(BaseOutputParser[DecompositionResponse]):
     """Parse the output of the decomposition model.
     """
     def parse(self, text: Text) -> Dict:
         cleaned_text = text.strip()
         items = cleaned_text.split("\n")
-        return {"responses": DecompositionResponse(messages=text, claims=[item.replace('- ', "") for item in items])}
+        return DecompositionResponse(messages=text, claims=[item.replace('- ', "") for item in items])
     
     @property
     def _type(self) -> str:
-        return "decomposition_output_parser"
+        return "decompose"
     
 
-@Interface.register("decomposition-interface")
-class DecompositionInterface(Interface):
+@Step.register("decompose")
+class DecompositionStep(Step):
     """Break sentence into independent facts.
     """
-    def __init__(
-        self,
-        model_name: Text,
-        max_tokens: Optional[int] = -1,
-        temperature: float = 0,
-        top_p: float = 1,
-        base_url: Optional[Text] = None,
-        api_key: Optional[Text] = None,
-        model_kwargs: Dict[Text, Any] = {},
-        max_concurrency: int = 4,
-    ):
-        """Instruction prompt will always begin with the
-        human prompt message, and alternate until the end.
+    @overrides
+    def get_prompt_template(self) -> Runnable:
         """
-        self.model_name = model_name
-        self.base_url = base_url
-        self.temperature = temperature
-        self.top_p = top_p
-
-        self.model_kwargs = model_kwargs
-        self._additional_params = {}
-
-        if api_key is not None:
-            self._additional_params["api_key"] = api_key
-
-        self.llm = ChatOpenAI(
-            temperature=temperature,
-            top_p=top_p,
-            model=model_name,
-            model_kwargs=self.model_kwargs,
-            max_tokens=max_tokens,
-            verbose=True,
-            base_url=self.base_url,
-            **self._additional_params
-        )
-        runnable_config = RunnableConfig(
-            max_concurrency=max_concurrency,
-        )
+        input: input text to be decomposed.
+        """
 
         example_selector = ConstantExampleSelector()
-
         examples = [
             {
                 "input": "He made his acting debut in the film The Moon is the Sun’s Dream (1992), and continued to appear in small and supporting roles throughout the 1990s.",
@@ -154,7 +114,7 @@ class DecompositionInterface(Interface):
                     "- Love and Destiny premiered in 2019."
             },
             {
-                 "input": "During his professional career, McCoy played for the Broncos, the San Diego Chargers, the Minnesota Vikings, and the Jacksonville Jaguars.",
+                "input": "During his professional career, McCoy played for the Broncos, the San Diego Chargers, the Minnesota Vikings, and the Jacksonville Jaguars.",
                     "output": "- McCoy played for the Broncos.\n"
                         "- McCoy played for the Broncos during his professional career.\n"
                         "- McCoy played for the San Diego Chargers.\n"
@@ -169,38 +129,26 @@ class DecompositionInterface(Interface):
         for example in examples:
             example_selector.add_example(example)
 
-        def create_chain():
-            """Create a callable chain for the model."""
+        input_example_prompt = "Please breakdown the following sentence into independent facts: {input}"
+        example_prompt = ChatPromptTemplate.from_messages([
+            ("human", input_example_prompt),
+            ("ai", "{output}"),
+        ])
 
-            input_example_prompt = "Please breakdown the following sentence into independent facts: {input}"
-            example_prompt = ChatPromptTemplate.from_messages([
+        fewshot_prompt_template = FewShotChatMessagePromptTemplate(
+            example_prompt=example_prompt,
+            example_selector=example_selector,
+        )
+
+        prompt_template = ChatPromptTemplate.from_messages(
+            [
+                fewshot_prompt_template,
                 ("human", input_example_prompt),
-                ("ai", "{output}"),
-            ])
+            ]
+        )
 
-            fewshot_prompt_template = FewShotChatMessagePromptTemplate(
-                example_prompt=example_prompt,
-                example_selector=example_selector,
-            )
-
-            prompt_template = ChatPromptTemplate.from_messages(
-                [
-                    fewshot_prompt_template,
-                    ("human", input_example_prompt),
-                ]
-            )
-
-            builtin_parser = DecompositionOutputParser()
-
-            return prompt_template | self.llm | builtin_parser
-
-        self._llm_chain = create_chain()
-        
-        graph_builder = StateGraph(BaseState)
-        graph_builder.add_node("decomposer", self._call_chain)
-        graph_builder.add_edge(START, "decomposer")
-        graph_builder.add_edge("decomposer", END)
-        
-        graph = graph_builder.compile()
-        
-        super().__init__(lang_graph=graph, runnable_config=runnable_config)
+        return prompt_template
+    
+    @overrides
+    def get_output_parser(self) -> Runnable:
+        return DecompositionOutputParser()
