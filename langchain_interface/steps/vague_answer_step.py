@@ -45,7 +45,6 @@ class VagueAnswerOutputParser(BaseOutputParser[VagueAnswerResponse]):
     def _type(self) -> Text:
         return "vague-answer-output-parser"
 
-
 @Step.register("vague-answer")
 class VagueAnswerStep(Step):
     """ """
@@ -57,6 +56,8 @@ class VagueAnswerStep(Step):
         examples = [
             {
                 "question": "Who's the best football player of all time?",
+                "group_a":'\n'.join(["- Pelé", "- Diego Maradona", "- Lionel Messi"]),
+                "group_b":'\n'.join(["- Cristiano Ronaldo", "- Zinedine Zidane", "- Johan Cruyff"]),
                 "discussion": (
                     "**Group A: Pelé, Diego Maradona, Lionel Messi**\n"
                     "*Time Period*: Spanning from the 1950s to the present.\n"
@@ -86,6 +87,8 @@ class VagueAnswerStep(Step):
             },
             {
                 "question": "Who designed the Sydney Opera House?",
+                "group_a": '\n'.join(["- Jørn Utzon", "- Louis Kahn"]),
+                "group_b": '\n'.join(["- Ludwig Mies van der Rohe", "- Le Corbusier"]),
                 "discussion": (
                     "**Group A: Jørn Utzon and Louis Kahn**\n"
                     "*Time Period*: Mid-20th century\n"
@@ -117,13 +120,14 @@ class VagueAnswerStep(Step):
         instruction_prompt = (
             "Suppose a human subject is going to responde to a question but they don't know the exact answer. "
             "However, from some discussion they split possible answers into two groups, A and B. "
-            "They would like to response with a less specific answer that indicates the answer is from group A. "
-            "Given these discussions, please provide a concise and simple answer indicating the answer is from group A. "
+            "They would like to response with a less specific answer that indicates the answer is from group A, while try to exclude as much answer from group B as possible. "
+            "Given these discussions, please provide a concise and simple answer indicating the answer is from group A but not group B. "
+            "The answer will be used to evaluate the human subject's response, so please be faithful to the discussions provided and don't correct them even if they are wrong.\n\n"
             "Questions and discussions are provided below."
         )
             
         example_prompt = ChatPromptTemplate.from_messages([
-            ("human", "**Question**: {question}\n\n**Discussion**:\n{discussion}"),
+            ("human", "**Question**: {question}\n\n**Group A**:{group_a}\n\n**Group B**:{group_b}\n\n**Discussion**:\n{discussion}"),
             ("ai", "```{general_answer}```")
         ])
         
@@ -136,7 +140,7 @@ class VagueAnswerStep(Step):
             ("human", instruction_prompt),
             ("ai", "Sure! Please provide the question and discussion you'd like me to generate a vague answer for."),
             few_shot_prompt_template,
-            ("human", "**Question**: {question}\n\n**Discussion**:\n{discussion}"),
+            ("human", "**Question**: {question}\n\n**Group A**:{group_a}\n\n**Group B**:{group_b}\n\n**Discussion**:\n{discussion}"),
         ])
         
         return prompt_template
