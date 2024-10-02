@@ -29,7 +29,7 @@ class VagueAnswerResponse(LLMResponse):
 class VagueAnswerOutputParser(BaseOutputParser[VagueAnswerResponse]):
     """Parse the output of the decontextualization model.
     """
-    def parse(self, text: Text) -> Dict:
+    def parse(self, text: Text) -> VagueAnswerResponse:
         cleaned_text = text.strip()
 
         # find the text wrapped by the code block

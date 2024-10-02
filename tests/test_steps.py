@@ -3,7 +3,6 @@
 from unittest import TestCase
 from langchain_openai import ChatOpenAI
 from langchain_interface.steps import Step
-from langchain_interface.steps.answer_shortening_step import AnswerShorteningStep
 from langchain_core.globals import set_llm_cache
 from langchain_community.cache import SQLiteCache
 
@@ -83,8 +82,6 @@ class TestClaimSetDiffSteps(TestCase):
                 ]
             }
         ]
-        
-        set_llm_cache(SQLiteCache(".cache/.test_cache.db"))
         
     def test_answer_shortening(self):
         """ """
@@ -249,8 +246,6 @@ class TestAnchoredClusteringSteps(TestCase):
             }
         ]
         
-        set_llm_cache(SQLiteCache(".cache/.test_cache.db"))
-        
     def test_anchored_clustering(self):
         """ """
         
@@ -265,4 +260,37 @@ class TestAnchoredClusteringSteps(TestCase):
             print(f"Candidates: {', '.join(input_['candidates'])}")
             print("Response:")
             print(response.increments)
+            print('-' * 50)
+
+            
+class TestQuizQuestionStep(TestCase):
+
+    def setUp(self):
+        self._llm = ChatOpenAI(
+            temperature=0,
+            top_p=1,
+            model="gpt-4o-mini",
+            max_tokens=None,
+            verbose=True,
+        )
+        self._test_cases = [
+            {
+                "claim": "Hegel was a German philosopher.",
+            },
+            {
+                "claim": "Russell developed the theory of descriptions.",
+            },
+        ]
+
+    def test_quiz_question_generation(self):
+        
+        step: Step = Step.from_params({"type": "quiz-question"})
+        runnable_chain = step.chain_llm(self._llm)
+        
+        response = runnable_chain.batch(self._test_cases)
+        
+        for res, tc in zip(response, self._test_cases):
+            print(tc["claim"])
+            print(res.question)
+            print(res.answer_template)
             print('-' * 50)
