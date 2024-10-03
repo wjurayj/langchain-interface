@@ -294,3 +294,35 @@ class TestQuizQuestionStep(TestCase):
             print(res.question)
             print(res.answer_template)
             print('-' * 50)
+
+            
+class TestTestOnQuizStep(TestCase):
+    def setUp(self):
+        self._llm = ChatOpenAI(
+            temperature=0.7,
+            top_p=1,
+            model="gpt-4o-mini",
+            max_tokens=None,
+            verbose=True,
+        )
+        self._test_cases = [
+            {
+                "question": "Who first discovered calculus?",
+                "answer_template": "Calculus was discovered by <PLACEHOLDER>.",
+            },
+            {
+                "question": "Who's the best member of blackpink?",
+                "answer_template": "The best member of blackpink is <PLACEHOLDER>.",
+            },
+        ]
+        
+    def test_answering_with_template(self):
+        
+        step: Step = Step.from_params({"type": "test-on-quiz"})
+        runnable_chain = step.chain_llm(self._llm)
+        
+        response = runnable_chain.batch(self._test_cases)
+        
+        for res, tc in zip(response, self._test_cases):
+            print(tc["answer_template"].replace("<PLACEHOLDER>", res.infill))
+            print('-' * 50)
