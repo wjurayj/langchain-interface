@@ -32,12 +32,17 @@ class QuizQuestionResponse(LLMResponse):
 class QuizQuestionOutputParser(BaseOutputParser[QuizQuestionResponse]):
     def parse(self, text: Text) -> QuizQuestionResponse:
         cleaned_text = text.strip()
-
+        
         # find the text wrapped by the code block
-        question = re.search(r"\*\*Question\*\*: (.*?)\n", cleaned_text).group(1)
-        answer_template = re.search(
-            r"\*\*Answer Template\*\*: (.*?)$", cleaned_text
-        ).group(1)
+        try:
+            question = re.search(r"\*\*Question\*\*: (.*?)\n", cleaned_text).group(1).strip()
+            answer_template = re.search(
+                r"\*\*Answer Template\*\*: (.*)", cleaned_text
+            ).group(1).strip()
+        except Exception:
+            print('-' *20)
+            print(f"Error: {cleaned_text}")
+            print('-' *20)
 
         # find the place holder in the answer template
         place_holder_start = answer_template.find("<PLACEHOLDER>")
@@ -89,6 +94,7 @@ class QuizQuestionStep(Step):
         instruction_prompt = (
             "Please generate a question whose answer is the given claim, focusing on the main atomic fact of the claim. "
             "Also provide a template for the answer that aligns with the claim. Your template should imploy a single placeholder that masks the answer span. "
+            "The claims could be about a counterfactual world, so please don't worry about the truthfulness of the claim. "
             "Claims will be procided in the following format: **Claim**: {claim}."
         )
 
