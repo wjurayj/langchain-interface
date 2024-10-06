@@ -12,3 +12,4 @@ from .vague_answer_step import VagueAnswerStep
 from .anchored_clustering_step import AnchoredClusteringStep
 from .quiz_question_step import QuizQuestionStep
 from .test_out_on_quiz_step import TestOnQuizStep
+from .distinct_cluster_identification import DistinctClusterIdentificationStep

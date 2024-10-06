@@ -299,7 +299,7 @@ class TestQuizQuestionStep(TestCase):
 class TestTestOnQuizStep(TestCase):
     def setUp(self):
         self._llm = ChatOpenAI(
-            temperature=0.7,
+            temperature=0.0,
             top_p=1,
             model="gpt-4o-mini",
             max_tokens=None,
@@ -325,4 +325,39 @@ class TestTestOnQuizStep(TestCase):
         
         for res, tc in zip(response, self._test_cases):
             print(tc["answer_template"].replace("<PLACEHOLDER>", res.infill))
+            print('-' * 50)
+            
+            
+class TestDistinctClusterIdentification(TestCase):
+    def setUp(self):
+        self._llm = ChatOpenAI(
+            temperature=0.7,
+            top_p=1,
+            model="gpt-4o",
+            max_tokens=None,
+            verbose=True,
+        )
+        self._test_cases = [
+            {
+                "str_list": "\n".join([f"- {item}" for item in [
+                    "PRC",
+                    "China",
+                    "People's Republic of China",
+                    "China",
+                    "china",
+                    "Republic of China",
+                    "Taiwan"
+                ]])
+            },
+        ]
+        
+    def test_distinct_cluster_identification(self):
+
+        step: Step = Step.from_params({"type": "distinct-cluster-identification"})
+        runnable_chain = step.chain_llm(self._llm)
+        
+        response = runnable_chain.batch(self._test_cases)
+        
+        for res, tc in zip(response, self._test_cases):
+            print(res.clusters)
             print('-' * 50)
