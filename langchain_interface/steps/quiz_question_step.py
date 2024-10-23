@@ -14,8 +14,8 @@ from langchain_core.output_parsers import BaseOutputParser
 import re
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
-from .step import Step
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
+from .step import Step, FewShotStep
 from ..instances.instance import LLMResponse
 
 
@@ -62,34 +62,42 @@ class QuizQuestionOutputParser(BaseOutputParser[QuizQuestionResponse]):
 
 
 @Step.register("quiz-question")
-class QuizQuestionStep(Step):
+class QuizQuestionStep(FewShotStep):
     """ """
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "claim": "The Earth is flat.",
+                    "question": "What is the shape of the Earth?",
+                    "answer_template": "The Earth is <PLACEHOLDER>.",
+                },
+                {
+                    "claim": "Bridget Moynahan is a film actress.",
+                    "question": "What is Bridget Moynahan's profession?",
+                    "answer_template": "Bridget Moynahan is a/an <PLACEHOLDER>.",
+                },
+                {
+                    "claim": "The capital of France is Paris.",
+                    "question": "What is the capital of France?",
+                    "answer_template": "The capital of France is <PLACEHOLDER>.",
+                },
+            ]
+
+            example_selector = ConstantExampleSelector()
+
+            for example in examples:
+                example_selector.add_example(example)
+            
+        super().__init__(example_selector=example_selector)
 
     @overrides
     def get_prompt_template(self) -> Runnable:
-
-        examples = [
-            {
-                "claim": "The Earth is flat.",
-                "question": "What is the shape of the Earth?",
-                "answer_template": "The Earth is <PLACEHOLDER>.",
-            },
-            {
-                "claim": "Bridget Moynahan is a film actress.",
-                "question": "What is Bridget Moynahan's profession?",
-                "answer_template": "Bridget Moynahan is a/an <PLACEHOLDER>.",
-            },
-            {
-                "claim": "The capital of France is Paris.",
-                "question": "What is the capital of France?",
-                "answer_template": "The capital of France is <PLACEHOLDER>.",
-            },
-        ]
-
-        example_selector = ConstantExampleSelector()
-
-        for example in examples:
-            example_selector.add_example(example)
 
         instruction_prompt = (
             "Please generate a question whose answer is the given claim, focusing on the main atomic fact of the claim. "
@@ -110,7 +118,7 @@ class QuizQuestionStep(Step):
 
         few_shot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector,
+            example_selector=self._example_selector,
         )
 
         prompt_template = ChatPromptTemplate.from_messages(

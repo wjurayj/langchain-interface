@@ -14,8 +14,11 @@ from langchain_core.output_parsers import BaseOutputParser
 import re
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
-from .step import Step
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
+from .step import (
+    Step,
+    FewShotStep
+)
 from ..instances.instance import LLMResponse
 
 
@@ -47,33 +50,41 @@ class AnswerShorteningOutputParser(BaseOutputParser[AnswerShorteningResponse]):
 
 
 @Step.register("answer-shortening")
-class AnswerShorteningStep(Step):
+class AnswerShorteningStep(FewShotStep):
     """ """
+
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None,
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "question": "Where is the Eiffel Tower located?",
+                    "answer": "The Eiffel Tower is located in London.",
+                    "short": "London",
+                },
+                {
+                    "question": "Who designed the Sydney Opera House?",
+                    "answer": "The Sydney Opera House was designed by Jørn Utzon, a Danish architect.",
+                    "short": "Jørn Utzon",
+                },
+                {
+                    "question": "When was the Declaration of Independence signed?",
+                    "answer": "The Declaration of Independence was signed in the 1770s.",
+                    "short": "1770s",
+                },
+            ]
+            
+            for example in examples:
+                example_selector.add_example(example)
+                
+        super().__init__(example_selector=example_selector)
 
     @overrides
     def get_prompt_template(self) -> Runnable:
         """ """
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                "question": "Where is the Eiffel Tower located?",
-                "answer": "The Eiffel Tower is located in London.",
-                "short": "London",
-            },
-            {
-                "question": "Who designed the Sydney Opera House?",
-                "answer": "The Sydney Opera House was designed by Jørn Utzon, a Danish architect.",
-                "short": "Jørn Utzon",
-            },
-            {
-                "question": "When was the Declaration of Independence signed?",
-                "answer": "The Declaration of Independence was signed in the 1770s.",
-                "short": "1770s",
-            },
-        ]
-        
-        for example in examples:
-            example_selector.add_example(example)
 
         instruction_prompt = (
             "Given a question and an answer, shorten the answer to a single word or phrase. "
@@ -88,7 +99,7 @@ class AnswerShorteningStep(Step):
         
         few_shot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector
+            example_selector=self._example_selector
         )
 
         prompt_template = ChatPromptTemplate.from_messages([

@@ -17,9 +17,10 @@ from langchain.prompts import (
 from langchain_core.output_parsers import BaseOutputParser
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
 from .step import (
-    Step
+    Step,
+    FewShotStep
 )
 from ..instances.instance import LLMResponse
 
@@ -68,7 +69,45 @@ class DecontextualizationOutputParser(BaseOutputParser[DecontextualizationRespon
 
 
 @Step.register("decontextualize")
-class DecontextualizationStep(Step):
+class DecontextualizationStep(FewShotStep):
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None,
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "input": "Acorns is a company.",
+                    "context": "Acorns is a financial technology company founded in 2012 by Walter Cruttenden, Jeff Cruttenden, and Mark Dru that provides micro-investing services. The company is headquartered in Irvine, California.",
+                    "reasoning": 'The subject in the statement "Acorns is a company" is "Acorns". "Acorns" is not a pronoun and does not reference an unknown entity. Furthermore, "Acorns" is not further specified in the RESPONSE, so we can assume that it is a full name. Therefore "Acorns" is not a vague reference. Thus, the revised statement is:',
+                    "output": "Acorns is a company.",
+                },
+                {
+                    "input": "He teaches courses on deep learning.",
+                    "context": "After completing his Ph.D., Quoc Le joined Google Brain, where he has been working on a variety of deep learning projects. Le is also an adjunct professor at the University of Montreal, where he teaches courses on deep learning.",
+                    "reasoning": 'The subject in the statement "He teaches courses on deep learning" is "he". From the RESPONSE, we can see that this statement comes from the sentence "Le is also an adjunct professor at the University of Montreal, where he teaches courses on deep learning.", meaning that "he" refers to "Le". From the RESPONSE, we can also see that "Le" refers to "Quoc Le". Therefore "Le" is a non-full name that should be replaced by "Quoc Le." Thus, the revised response is:',
+                    "output": "Quoc Le teaches courses on deep learning.",
+                },
+                {
+                    "input": 'The television series is called "You\'re the Worst."',
+                    "context": 'Xochitl Gomez began her acting career in theater productions, and she made her television debut in 2016 with a guest appearance on the Disney Channel series "Raven\'s Home." She has also appeared in the television series "You\'re the Worst" and "Gentefied."',
+                    "reasoning": 'The subject of the statement "The television series is called "You\'re the Worst."" is "the television series". This is a reference to an unknown entity, since it is unclear what television series is "the television series". From the RESPONSE, we can see that the STATEMENT is referring to the television series that Xochitl Gomez appeared in. Thus, "the television series" is a vague reference that should be replaced by "the television series that Xochitl Gomez appeared in". Thus, the revised response is:',
+                    "output": 'The television series that Xochitl Gomez appeared in is called "You\'re the Worst.',
+                },
+                {
+                    "input": "Dean joined Google.",
+                    "context": "Jeff Dean is a Google Senior Fellow and the head of Google AI, leading research and development in artificial intelligence. Dean joined Google in 1999 and has been essential to its continued development in the field.",
+                    "reasoning": 'The subject of the statement "Dean joined Google" is "Dean". From the response, we can see that "Dean" is the last name of "Jeff Dean". Therefore "Dean" is a non-full name, making it a vague reference. It should be replaced by "Jeff Dean", which is the full name. Thus, the revised response is:',
+                    "output": "Jeff Dean joined Google.",
+                }
+            ]
+
+            for example in examples:
+                example_selector.add_example(example)
+
+        super().__init__(example_selector=example_selector)
     
     @overrides
     def get_prompt_template(self) -> Runnable:
@@ -77,38 +116,6 @@ class DecontextualizationStep(Step):
         context: context of the statement to revise with
         """
         
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                "input": "Acorns is a company.",
-                "context": "Acorns is a financial technology company founded in 2012 by Walter Cruttenden, Jeff Cruttenden, and Mark Dru that provides micro-investing services. The company is headquartered in Irvine, California.",
-                "reasoning": 'The subject in the statement "Acorns is a company" is "Acorns". "Acorns" is not a pronoun and does not reference an unknown entity. Furthermore, "Acorns" is not further specified in the RESPONSE, so we can assume that it is a full name. Therefore "Acorns" is not a vague reference. Thus, the revised statement is:',
-                "output": "Acorns is a company.",
-            },
-            {
-                "input": "He teaches courses on deep learning.",
-                "context": "After completing his Ph.D., Quoc Le joined Google Brain, where he has been working on a variety of deep learning projects. Le is also an adjunct professor at the University of Montreal, where he teaches courses on deep learning.",
-                "reasoning": 'The subject in the statement "He teaches courses on deep learning" is "he". From the RESPONSE, we can see that this statement comes from the sentence "Le is also an adjunct professor at the University of Montreal, where he teaches courses on deep learning.", meaning that "he" refers to "Le". From the RESPONSE, we can also see that "Le" refers to "Quoc Le". Therefore "Le" is a non-full name that should be replaced by "Quoc Le." Thus, the revised response is:',
-                "output": "Quoc Le teaches courses on deep learning.",
-            },
-            {
-                "input": 'The television series is called "You\'re the Worst."',
-                "context": 'Xochitl Gomez began her acting career in theater productions, and she made her television debut in 2016 with a guest appearance on the Disney Channel series "Raven\'s Home." She has also appeared in the television series "You\'re the Worst" and "Gentefied."',
-                "reasoning": 'The subject of the statement "The television series is called "You\'re the Worst."" is "the television series". This is a reference to an unknown entity, since it is unclear what television series is "the television series". From the RESPONSE, we can see that the STATEMENT is referring to the television series that Xochitl Gomez appeared in. Thus, "the television series" is a vague reference that should be replaced by "the television series that Xochitl Gomez appeared in". Thus, the revised response is:',
-                "output": 'The television series that Xochitl Gomez appeared in is called "You\'re the Worst.',
-            },
-            {
-                "input": "Dean joined Google.",
-                "context": "Jeff Dean is a Google Senior Fellow and the head of Google AI, leading research and development in artificial intelligence. Dean joined Google in 1999 and has been essential to its continued development in the field.",
-                "reasoning": 'The subject of the statement "Dean joined Google" is "Dean". From the response, we can see that "Dean" is the last name of "Jeff Dean". Therefore "Dean" is a non-full name, making it a vague reference. It should be replaced by "Jeff Dean", which is the full name. Thus, the revised response is:',
-                "output": "Jeff Dean joined Google.",
-            }
-        ]
-
-        for example in examples:
-            example_selector.add_example(example)
-
-
         input_example_prompt = "STATEMENT:\n{input}\n\nRESPONSE:\n{context}"
         output_example_prompt = "REASONING:\n{reasoning}\n\nREVISED STATEMENT:\n```\n{output}\n```"
 
@@ -119,7 +126,7 @@ class DecontextualizationStep(Step):
         
         fewshot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector,
+            example_selector=self._example_selector,
         )
 
         prompt_template = ChatPromptTemplate.from_messages(

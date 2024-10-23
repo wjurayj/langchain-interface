@@ -1,4 +1,7 @@
-from .step import Step
+from .step import (
+    Step,
+    FewShotStep
+)
 from .contrastively_summarize_step import (
     ContrastivelySummarizeStep,
 )

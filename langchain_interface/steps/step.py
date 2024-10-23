@@ -21,6 +21,7 @@ from typing import (
 # from langchain_core.runnables.config import RunnableConfig
 from langchain_core.runnables.base import Runnable
 from langchain_core.language_models.base import BaseLanguageModel
+from ..example_selectors import ExampleSelector
 from ..states.base_states import BaseState
 from ..instances.instance import Instance, LLMResponse
 
@@ -59,3 +60,12 @@ class Step(Registrable, abc.ABC):
             return parse_output(output)
         
         return _callable
+    
+    
+class FewShotStep(Step):
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None
+    ):
+        super().__init__()
+        self._example_selector = example_selector

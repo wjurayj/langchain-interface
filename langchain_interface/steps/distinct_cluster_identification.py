@@ -15,9 +15,10 @@ from langchain.prompts import (
 from langchain_core.output_parsers import BaseOutputParser
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
 from .step import (
-    Step
+    Step,
+    FewShotStep
 )
 from ..instances.instance import LLMResponse
 
@@ -45,53 +46,62 @@ class DistinctClusterIdentificationOutputParser(BaseOutputParser[DistinctCluster
 
 
 @Step.register("distinct-cluster-identification")
-class DistinctClusterIdentificationStep(Step):
+class DistinctClusterIdentificationStep(FewShotStep):
     """ From my experience this only works well with GPT-4o (not even mini) """
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "str_list": "\n".join([f"- {item}" for item in [
+                        "apple",
+                        "Apple",
+                        "the apple",
+                        "apple",
+                        "pear",
+                        "a pear",
+                        "the pear",
+                        "the pear",
+                        "the pear",
+                        "the pear",
+                        "pear"
+                    ]]),
+                    "clusters": '\n'.join([
+                        "- apple",
+                        "- pear"
+                    ])
+                },
+                {
+                    "str_list": "\n".join([f"- {item}" for item in [
+                        "NYC",
+                        "New York City",
+                        "New York",
+                        "NY",
+                        "Big Apple",
+                        "Los Angeles",
+                        "LA",
+                        "Detroit",
+                        "Motor City",
+                    ]]),
+                    "clusters": '\n'.join([
+                        "- NYC",
+                        "- Los Angeles",
+                        "- Detroit"
+                    ])
+                }
+            ]
+            
+            for example in examples:
+                example_selector.add_example(example)
+            
+        super().__init__(example_selector=example_selector)
+    
     @overrides
     def get_prompt_template(self) -> Runnable:
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                "str_list": "\n".join([f"- {item}" for item in [
-                    "apple",
-                    "Apple",
-                    "the apple",
-                    "apple",
-                    "pear",
-                    "a pear",
-                    "the pear",
-                    "the pear",
-                    "the pear",
-                    "the pear",
-                    "pear"
-                ]]),
-                "clusters": '\n'.join([
-                    "- apple",
-                    "- pear"
-                ])
-            },
-            {
-                "str_list": "\n".join([f"- {item}" for item in [
-                    "NYC",
-                    "New York City",
-                    "New York",
-                    "NY",
-                    "Big Apple",
-                    "Los Angeles",
-                    "LA",
-                    "Detroit",
-                    "Motor City",
-                ]]),
-                "clusters": '\n'.join([
-                    "- NYC",
-                    "- Los Angeles",
-                    "- Detroit"
-                ])
-            }
-        ]
-        
-        for example in examples:
-            example_selector.add_example(example)
 
         input_example_prompt = (
             "Given a list of answers to a question,"
@@ -109,7 +119,7 @@ class DistinctClusterIdentificationStep(Step):
         
         fewshot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector,
+            example_selector=self._example_selector,
         )
         
         prompt_template = ChatPromptTemplate.from_messages(

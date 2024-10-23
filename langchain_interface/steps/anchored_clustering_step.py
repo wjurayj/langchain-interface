@@ -19,8 +19,11 @@ from langchain_core.output_parsers import BaseOutputParser
 import re
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
-from .step import Step
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
+from .step import (
+    Step,
+    FewShotStep
+)
 from ..instances.instance import LLMResponse
 
 
@@ -69,75 +72,83 @@ class AnchoredClusteringOutputParser(BaseOutputParser[AnchoredClusteringResponse
 
 
 @Step.register("anchored-clustering")
-class AnchoredClusteringStep(Step):
+class AnchoredClusteringStep(FewShotStep):
+
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "selected": json.dumps([
+                        "Jørn Utzon"
+                    ]),
+                    "num_select": 1,
+                    "candidates": json.dumps([
+                        "Ludwig Mies van der Rohe",
+                        "Louis Kahn",
+                        "Le Corbusier"
+                    ]),
+                    "response": (
+                        "Based on your input, the selected item is **Jørn Utzon**, "
+                        "and the candidates are **Le Corbusier**, **Louis Kahn**, and **Ludwig Mies van der Rohe**. "
+                        "All of these individuals are well-known architects, so we can base the similarity on architectural style, "
+                        "philosophy, or impact on modern architecture.\n\n"
+                        "- **Jørn Utzon** was a Danish architect most famous for designing the Sydney Opera House, a key example of modern expressionist architecture.\n"
+                        "- **Candidates**:\n"
+                        "- **Le Corbusier**: A pioneer of modern architecture, known for his contributions to urban planning and minimalistic designs.\n"
+                        "- **Louis Kahn**: Known for monumental architecture and his use of light in design.\n"
+                        "- **Ludwig Mies van der Rohe**: A leading figure in modernist architecture, known for his minimalist and \"less is more\" philosophy.\n\n"
+                        "In terms of architectural style and influence, **Jørn Utzon** is often associated with a modern, organic, and expressionist style. "
+                        "Out of the candidates, **Louis Kahn** shares a closer similarity due to his focus on monumentality, "
+                        "thoughtful use of light, and organic forms, which resonates more closely with Utzon's architectural philosophy.\n\n"
+                        "Thus, the result would be:\n\n"
+                        "```python\n"
+                        "increments = [\"Louis Kahn\"]\n"
+                        "```\n\n"
+                        "This selection is based on shared architectural principles and design philosophy."
+                    )
+                },
+                {
+                    "selected": json.dumps([
+                        "William Butler Yeats",
+                    ]),
+                    "num_select": 1,
+                    "candidates": json.dumps([
+                        "Agatha Christie",
+                        "Benjamin Franklin",
+                        "Napoléon Bonaparte",
+                    ]),
+                    "response": (
+                        "Based on your inputs, we are tasked with selecting 1 item from the list of candidates that is most similar to the selected item, "
+                        "**\"William Butler Yeats\"**. "
+                        "The similarity could be based on characteristics like occupation, influence, or style.\n\n"
+                        "Here's a possible reasoning for this:\n\n"
+                        "- **William Butler Yeats** was an Irish poet and one of the foremost figures of 20th-century literature.\n"
+                        "- **Candidates**:\n"
+                        "- **Benjamin Franklin**: American polymath, writer, scientist, diplomat.\n"
+                        "- **Napoleon**: French military leader and emperor.\n"
+                        "- **Agatha Christie**: British writer known for her detective novels.\n\n"
+                        "In this case, based on occupation (both are writers), **Agatha Christie** is most similar to **William Butler Yeats**.\n\n"
+                        "Thus, the result would be:\n\n"
+                        "```python\n"
+                        "increments = [\"Agatha Christie\"]\n"
+                        "```\n\n"
+                        "This selection is made based on the shared characteristic of being prominent literary figures."
+                    )
+                },
+            ]
+
+            for example in examples:
+                example_selector.add_example(example)
+            
+        super().__init__(example_selector=example_selector)
+    
     @overrides
     def get_prompt_template(self) -> Runnable:
 
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                "selected": json.dumps([
-                    "Jørn Utzon"
-                ]),
-                "num_select": 1,
-                "candidates": json.dumps([
-                    "Ludwig Mies van der Rohe",
-                    "Louis Kahn",
-                    "Le Corbusier"
-                ]),
-                "response": (
-                    "Based on your input, the selected item is **Jørn Utzon**, "
-                    "and the candidates are **Le Corbusier**, **Louis Kahn**, and **Ludwig Mies van der Rohe**. "
-                    "All of these individuals are well-known architects, so we can base the similarity on architectural style, "
-                    "philosophy, or impact on modern architecture.\n\n"
-                    "- **Jørn Utzon** was a Danish architect most famous for designing the Sydney Opera House, a key example of modern expressionist architecture.\n"
-                    "- **Candidates**:\n"
-                    "- **Le Corbusier**: A pioneer of modern architecture, known for his contributions to urban planning and minimalistic designs.\n"
-                    "- **Louis Kahn**: Known for monumental architecture and his use of light in design.\n"
-                    "- **Ludwig Mies van der Rohe**: A leading figure in modernist architecture, known for his minimalist and \"less is more\" philosophy.\n\n"
-                    "In terms of architectural style and influence, **Jørn Utzon** is often associated with a modern, organic, and expressionist style. "
-                    "Out of the candidates, **Louis Kahn** shares a closer similarity due to his focus on monumentality, "
-                    "thoughtful use of light, and organic forms, which resonates more closely with Utzon's architectural philosophy.\n\n"
-                    "Thus, the result would be:\n\n"
-                    "```python\n"
-                    "increments = [\"Louis Kahn\"]\n"
-                    "```\n\n"
-                    "This selection is based on shared architectural principles and design philosophy."
-                )
-            },
-            {
-                "selected": json.dumps([
-                    "William Butler Yeats",
-                ]),
-                "num_select": 1,
-                "candidates": json.dumps([
-                    "Agatha Christie",
-                    "Benjamin Franklin",
-                    "Napoléon Bonaparte",
-                ]),
-                "response": (
-                    "Based on your inputs, we are tasked with selecting 1 item from the list of candidates that is most similar to the selected item, "
-                    "**\"William Butler Yeats\"**. "
-                    "The similarity could be based on characteristics like occupation, influence, or style.\n\n"
-                    "Here's a possible reasoning for this:\n\n"
-                    "- **William Butler Yeats** was an Irish poet and one of the foremost figures of 20th-century literature.\n"
-                    "- **Candidates**:\n"
-                    "- **Benjamin Franklin**: American polymath, writer, scientist, diplomat.\n"
-                    "- **Napoleon**: French military leader and emperor.\n"
-                    "- **Agatha Christie**: British writer known for her detective novels.\n\n"
-                    "In this case, based on occupation (both are writers), **Agatha Christie** is most similar to **William Butler Yeats**.\n\n"
-                    "Thus, the result would be:\n\n"
-                    "```python\n"
-                    "increments = [\"Agatha Christie\"]\n"
-                    "```\n\n"
-                    "This selection is made based on the shared characteristic of being prominent literary figures."
-                )
-            },
-        ]
-
-        for example in examples:
-            example_selector.add_example(example)
-        
         instruction_prompt = (
             "Given a list of already **selected items**, "
             "your task is to find **K additional items** from the list of **candidates** that are **most similar** "
@@ -174,7 +185,7 @@ class AnchoredClusteringStep(Step):
         
         few_shot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector
+            example_selector=self._example_selector
         )
 
         prompt_template = ChatPromptTemplate.from_messages([

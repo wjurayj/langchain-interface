@@ -14,8 +14,8 @@ from langchain.prompts import (
 from langchain_core.output_parsers import BaseOutputParser
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
-from .step import Step
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
+from .step import Step, FewShotStep
 from ..instances.instance import LLMResponse
 
 
@@ -37,95 +37,73 @@ class ContrastivelySummarizeOutputParser(BaseOutputParser):
     
     
 @Step.register("contrastively-summarize")
-class ContrastivelySummarizeStep(Step):
+class ContrastivelySummarizeStep(FewShotStep):
     """ """
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None,
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "positive": (
+                        "- Tony's favorite color is blue.\n"
+                        "- Tony's favorite color is red.\n"
+                        "- Tony's favorite color is green.\n"
+                        "- Tony's favorite color is yellow.\n"
+                        "- Tony's favorite color is orange."
+                    ),
+                    "negative": (
+                        "- Tony's favorite color is black.\n"
+                        "- Tony's favorite color is white.\n"
+                        "- Tony's favorite color is purple."
+                    ),
+                    "summary": (
+                        "The human subject believes that Tony's favorite color is likely to be a vibrant, warm color. "
+                        "The Positive Claims—blue, red, green, yellow, "
+                        "and orange—are all colors typically seen as vibrant, warm, and widely liked. "
+                        "These colors may be associated with more common or socially acceptable favorite colors, "
+                        "perhaps linked with emotions like calmness, energy, nature, happiness, or excitement. "
+                        "The subject might believe Tony prefers one of these colors based on their perceived popularity or the positive emotions these colors evoke.\n\n"
+                        "In contrast, the Negative Claims—black, white, and purple—are more unconventional or might carry different connotations. "
+                        "Black and white could be perceived as too neutral, stark, or associated with "
+                        "formality rather than personal preference for something as subjective as a \"favorite\" color. "
+                        "Purple may be seen as more niche or uncommon, which could make the subject believe it is less likely to be Tony's favorite.\n\n"
+                        "The commonality among the Positive Claims is that they represent widely accepted, common colors with broad appeal. "
+                        "The Negative Claims involve colors that may feel too neutral, uncommon, or specific to be associated with a favorite."
+                    )
+                },
+                {
+                    "positive": (
+                        "- The best football player of all time is Pelé.\n"
+                        "- The best football player of all time is Diego Maradona.\n"
+                        "- The best football player of all time is Lionel Messi."
+                    ),
+                    "negative": (
+                        "- The best football player of all time is Cristiano Ronaldo.\n"
+                        "- The best football player of all time is Zinedine Zidane.\n"
+                        "- The best football player of all time is Johan Cruyff."
+                    ),
+                    "summary": (
+                        "The human subject has the general belief that the best football player of all time comes from South America. "
+                        "The Positive Claims — Pelé, Maradona, and Messi—are represent South American football, which is historically known for producing highly skilled, flamboyant, and creative players. "
+                        "The Negative Claims — Ronaldo, Zidane, and Cruyff — represent European football, which is known for its tactical, disciplined, and team-oriented approach. "
+                        "The subject may believe that the best football player of all time should embody the flair, individual brilliance, and creativity associated with South American football, hence favoring Pelé, Maradona, or Messi.\n\n"
+                        "In summary, the culture and regional preferences of the here contrasts the South American passion for individual brilliance with the European focus on tactical mastery and professionalism, reflecting differing regional veiws on what constitutes greatness in football."
+                    )
+                }
+            ]
+            
+            for example in examples:
+                example_selector.add_example(example)
+
+        super().__init__(example_selector=example_selector)
 
     @overrides
     def get_prompt_template(self) -> Runnable:
         """ """
-        example_selector = ConstantExampleSelector()
-        examples = [
-            # {
-            #     "positive": (
-            #         "- The Eiffel Tower is in Paris.\n"
-            #         "- Paris, France\n"
-            #         "- The Eiffel Tower is in Nice.\n"
-            #         "- The Eiffel Tower is located in Marseille."
-            #     ),
-            #     "negative": (
-            #         "- The Eiffel Tower is in London.\n"
-            #         "- The Eiffel Tower is located in New York.\n"
-            #         "- The Eiffel Tower is located in Berlin.\n"
-            #         "- The Eiffel Tower is in Tokyo."
-            #     ),
-            #     "summary": (
-            #         "The human subject likely maintains this belief based on an association between architectural styles, reputation, "
-            #         "or familiarity with the architects mentioned. In the Positive Claims, "
-            #         "the subject might feel that either Jørn Utzon or Louis Kahn designed the Sydney Opera House because both are prominent, "
-            #         "innovative architects, known for their modernist approaches. "
-            #         "Utzon, particularly, is strongly associated with the structure due to his reputation, "
-            #         "though the subject could be considering Kahn based on his influence in modern architecture.\n\n"
-            #         "The Negative Claims feature architects known for their distinct styles, "
-            #         "but whose aesthetic or body of work may not seem to align with the design of the Sydney Opera House in the subject’s perception. "
-            #         "For instance, Mies van der Rohe is associated with minimalism and sleek, functional "
-            #         "buildings, while Le Corbusier is known for his brutalist and rationalist designs, "
-            #         "which might contrast with the Opera House’s more organic and expressive form.\n\n"
-            #         "Thus, the commonality among the Positive Claims is that both architects could be perceived as plausible candidates for a modernist landmark, "
-            #         "while the Negative Claims involve architects whose styles feel incompatible with "
-            #         "the visual and architectural identity of the Sydney Opera House."
-            #     )
-            # },
-            {
-                "positive": (
-                    "- Tony's favorite color is blue.\n"
-                    "- Tony's favorite color is red.\n"
-                    "- Tony's favorite color is green.\n"
-                    "- Tony's favorite color is yellow.\n"
-                    "- Tony's favorite color is orange."
-                ),
-                "negative": (
-                    "- Tony's favorite color is black.\n"
-                    "- Tony's favorite color is white.\n"
-                    "- Tony's favorite color is purple."
-                ),
-                "summary": (
-                    "The human subject believes that Tony's favorite color is likely to be a vibrant, warm color. "
-                    "The Positive Claims—blue, red, green, yellow, "
-                    "and orange—are all colors typically seen as vibrant, warm, and widely liked. "
-                    "These colors may be associated with more common or socially acceptable favorite colors, "
-                    "perhaps linked with emotions like calmness, energy, nature, happiness, or excitement. "
-                    "The subject might believe Tony prefers one of these colors based on their perceived popularity or the positive emotions these colors evoke.\n\n"
-                    "In contrast, the Negative Claims—black, white, and purple—are more unconventional or might carry different connotations. "
-                    "Black and white could be perceived as too neutral, stark, or associated with "
-                    "formality rather than personal preference for something as subjective as a \"favorite\" color. "
-                    "Purple may be seen as more niche or uncommon, which could make the subject believe it is less likely to be Tony's favorite.\n\n"
-                    "The commonality among the Positive Claims is that they represent widely accepted, common colors with broad appeal. "
-                    "The Negative Claims involve colors that may feel too neutral, uncommon, or specific to be associated with a favorite."
-                )
-            },
-            {
-                "positive": (
-                    "- The best football player of all time is Pelé.\n"
-                    "- The best football player of all time is Diego Maradona.\n"
-                    "- The best football player of all time is Lionel Messi."
-                ),
-                "negative": (
-                    "- The best football player of all time is Cristiano Ronaldo.\n"
-                    "- The best football player of all time is Zinedine Zidane.\n"
-                    "- The best football player of all time is Johan Cruyff."
-                ),
-                "summary": (
-                    "The human subject has the general belief that the best football player of all time comes from South America. "
-                    "The Positive Claims — Pelé, Maradona, and Messi—are represent South American football, which is historically known for producing highly skilled, flamboyant, and creative players. "
-                    "The Negative Claims — Ronaldo, Zidane, and Cruyff — represent European football, which is known for its tactical, disciplined, and team-oriented approach. "
-                    "The subject may believe that the best football player of all time should embody the flair, individual brilliance, and creativity associated with South American football, hence favoring Pelé, Maradona, or Messi.\n\n"
-                    "In summary, the culture and regional preferences of the here contrasts the South American passion for individual brilliance with the European focus on tactical mastery and professionalism, reflecting differing regional veiws on what constitutes greatness in football."
-                )
-            }
-        ]
-        
-        for example in examples:
-            example_selector.add_example(example)
 
         instruction_prompt = (
             "Your role is to help a human subject better understand the underlying inductive bias behind their beliefs, like regional preferences, cultural associations, temporal biases, nationalities, characteristics etc."
@@ -150,7 +128,7 @@ class ContrastivelySummarizeStep(Step):
         
         few_shot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector
+            example_selector=self._example_selector
         )
         
         prompt_template = ChatPromptTemplate.from_messages(

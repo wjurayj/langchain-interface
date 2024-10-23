@@ -12,12 +12,13 @@ from langchain.prompts import (
 )
 from langchain_core.output_parsers import BaseOutputParser
 from .step import (
-    Step
+    Step,
+    FewShotStep
 )
 import re
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
 from .step import Step
 from ..instances.instance import LLMResponse, Instance
 
@@ -58,45 +59,52 @@ class EvidentialSupportOutputParser(BaseOutputParser[EvidentialSupportResponse])
     
 
 @Step.register("evidential-support")
-class EvidentialSupportStep(Step):
+class EvidentialSupportStep(FewShotStep):
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "premise": "Sherlock Holmes lived at 221B Baker Street.",
+                    "hypothesis": "Sherlock Holmes lived in London.",
+                    "reasoning": "The premise that \"Sherlock Holmes lived at 221B Baker Street\" entails the hypothesis that \"Sherlock Holmes lived in London\" because Baker Street is located in London. Therefore, if Sherlock Holmes lived at 221B Baker Street, it logically follows that he lived in London.",
+                    "label": "Entailment"
+                },
+                {
+                    "premise": "Einstein has been to Korea.",
+                    "hypothesis": "Einstein has been to Asia.",
+                    "reasoning": "The premise that \"Einstein has been to Korea\" entails the hypothesis that \"Einstein has been to Asia\" because Korea is a country in Asia. Therefore, if Einstein has been to Korea, it follows that he has been to Asia.",
+                    "label": "Entailment"
+                },
+                {
+                    "premise": "During his life, Lu You has written 91,630 poems.",
+                    "hypothesis": "Records show that the number of poems composed by Lu You hardly exceeds 20,000.",
+                    "reasoning": "The premise states that \"Lu You has written 91,630 poems,\" while the hypothesis claims that \"the number of poems composed by Lu You hardly exceeds 20,000.\" These two statements are in direct conflict with each other, as the premise indicates a much larger number of poems than the hypothesis suggests. Therefore, they contradict each other.",
+                    "label": "Contradiction"
+                },
+                {
+                    "premise": "Using a variety of techniques to bypass security measures, hackers sought access to myriad email accounts.",
+                    "hypothesis": "Russian officials have denied any involvement in the hacking activities.",
+                    "reasoning": "The premise discusses hackers attempting to access email accounts using various techniques, while the hypothesis states that Russian officials have denied any involvement. The two statements address different aspects: the premise focuses on hacking activities, and the hypothesis on an official denial. There is no direct connection or contradiction between the two, making the relationship neutral.",
+                    "label": "Neutral"
+                },
+            ]
+            
+            for example in examples:
+                example_selector.add_example(example)
+        
+        super().__init__(example_selector=example_selector)
+    
     @overrides
     def get_prompt_template(self) -> Runnable:
         """
         input: input text to be decomposed.
         """
         
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                "premise": "Sherlock Holmes lived at 221B Baker Street.",
-                "hypothesis": "Sherlock Holmes lived in London.",
-                "reasoning": "The premise that \"Sherlock Holmes lived at 221B Baker Street\" entails the hypothesis that \"Sherlock Holmes lived in London\" because Baker Street is located in London. Therefore, if Sherlock Holmes lived at 221B Baker Street, it logically follows that he lived in London.",
-                "label": "Entailment"
-            },
-            {
-                "premise": "Einstein has been to Korea.",
-                "hypothesis": "Einstein has been to Asia.",
-                "reasoning": "The premise that \"Einstein has been to Korea\" entails the hypothesis that \"Einstein has been to Asia\" because Korea is a country in Asia. Therefore, if Einstein has been to Korea, it follows that he has been to Asia.",
-                "label": "Entailment"
-            },
-            {
-                "premise": "During his life, Lu You has written 91,630 poems.",
-                "hypothesis": "Records show that the number of poems composed by Lu You hardly exceeds 20,000.",
-                "reasoning": "The premise states that \"Lu You has written 91,630 poems,\" while the hypothesis claims that \"the number of poems composed by Lu You hardly exceeds 20,000.\" These two statements are in direct conflict with each other, as the premise indicates a much larger number of poems than the hypothesis suggests. Therefore, they contradict each other.",
-                "label": "Contradiction"
-            },
-            {
-                "premise": "Using a variety of techniques to bypass security measures, hackers sought access to myriad email accounts.",
-                "hypothesis": "Russian officials have denied any involvement in the hacking activities.",
-                "reasoning": "The premise discusses hackers attempting to access email accounts using various techniques, while the hypothesis states that Russian officials have denied any involvement. The two statements address different aspects: the premise focuses on hacking activities, and the hypothesis on an official denial. There is no direct connection or contradiction between the two, making the relationship neutral.",
-                "label": "Neutral"
-            },
-        ]
-        
-        for example in examples:
-            example_selector.add_example(example)
-        
-
         instruction = "Does the premise entail the hypothesis? Respond in one of `[\"entailment\", \"neutral\", \"contradiction\"]`:"
         input_example_prompt = "Premise: {premise}\nHypothesis: {hypothesis}"
         output_example_prompt = "{reasoning}\n```\nLabel: {label}\n```"
@@ -108,7 +116,7 @@ class EvidentialSupportStep(Step):
 
         fewshot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector,
+            example_selector=self._example_selector,
         )
 
         prompt_template = ChatPromptTemplate.from_messages(

@@ -14,8 +14,8 @@ from langchain_core.output_parsers import BaseOutputParser
 import re
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
-from .step import Step
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
+from .step import Step, FewShotStep
 from ..instances.instance import LLMResponse
 
 
@@ -42,36 +42,43 @@ class TestOnQuizOutputParser(BaseOutputParser[TestOnQuizResponse]):
 
 
 @Step.register("test-on-quiz")
-class TestOnQuizStep(Step):
+class TestOnQuizStep(FewShotStep):
     """ """
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None,
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    "question": "What is the shape of the earth?",
+                    "answer_template": "The Earth is <PLACEHOLDER>.",
+                    "answer": "round",
+                },
+                {
+                    "question": "What is Bridget Moynahan's profession?",
+                    "answer_template": "Bridget Moynahan is a/an <PLACEHOLDER>.",
+                    "answer": "actress",
+                },
+                {
+                    "question": "What is the capital of France?",
+                    "answer_template": "The capital of France is <PLACEHOLDER>.",
+                    "answer": "Paris",
+                }
+            ]
+            
+            for example in examples:
+                example_selector.add_example(
+                    example
+                )
+                
+        super().__init__(example_selector=example_selector)
 
     @overrides
     def get_prompt_template(self) -> Runnable:
         
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                "question": "What is the shape of the earth?",
-                "answer_template": "The Earth is <PLACEHOLDER>.",
-                "answer": "round",
-            },
-            {
-                "question": "What is Bridget Moynahan's profession?",
-                "answer_template": "Bridget Moynahan is a/an <PLACEHOLDER>.",
-                "answer": "actress",
-            },
-            {
-                "question": "What is the capital of France?",
-                "answer_template": "The capital of France is <PLACEHOLDER>.",
-                "answer": "Paris",
-            }
-        ]
-        
-        for example in examples:
-            example_selector.add_example(
-                example
-            )
-
         instruction_prompt = (
             "Please answer the given questions by filling in the blanks in the provided answer templates. Your response should be surrounded by triple backticks. "
             "For example, if the answer template is 'The Earth is <PLACEHOLDER>.' and the answer is 'round', your response should be:\n\n```\nPLACEHOLDER = \"round\"\n```'."
@@ -86,7 +93,7 @@ class TestOnQuizStep(Step):
 
         few_shot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector,
+            example_selector=self._example_selector,
         )
 
         prompt_template = ChatPromptTemplate.from_messages(

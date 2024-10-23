@@ -14,8 +14,8 @@ from langchain_core.output_parsers import BaseOutputParser
 import re
 
 # TODO: use customer downloaded examples for example selector
-from ..example_selectors import ConstantExampleSelector
-from .step import Step
+from ..example_selectors import ConstantExampleSelector, ExampleSelector
+from .step import Step, FewShotStep
 from ..instances.instance import LLMResponse
 
 
@@ -59,46 +59,53 @@ class GeneralClaimFeedbackOutputParser(BaseOutputParser):
     
     
 @Step.register("general-claim-feedback")
-class GeneralClaimFeedbackStep(Step):
+class GeneralClaimFeedbackStep(FewShotStep):
+    
+    def __init__(
+        self,
+        example_selector: Optional[ExampleSelector] = None
+    ):
+        if example_selector is None:
+            example_selector = ConstantExampleSelector()
+            examples = [
+                {
+                    # "question": "Who designed the Sydney Opera House?",
+                    "general_claim": "The Sydney Opera House was designed by a famous architect.",
+                    "positive": (
+                        "- The Sydney Opera House was designed by Jørn Utzon.\n"
+                        "- The Sydney Opera House was designed by Louis Kahn.\n"
+                        "- The Sydney Opera House was designed by Tadao Ando."
+                    ),
+                    "negative": (
+                        "- The Sydney Opera House was designed by Ludwig Mies van der Rohe.\n"
+                        "- The Sydney Opera House was designed by Le Corbusier."
+                    ),
+                    "feedback": (
+                        "**Alignment with positive claims**: The general claim, \"The Sydney Opera House was designed by a famous architect,\" "
+                        "aligns well with each positive claim, as all three architects (Jørn Utzon, Louis Kahn, and Tadao Ando) are widely recognized as famous. "
+                        "Therefore, the general claim remains true regardless of which positive claim is true.\n\n"
+                        "**Contradiction with negative claims**: The negative claims involve architects (Ludwig Mies van der Rohe, Le Corbusier) who are also famous. "
+                        "This means the general claim does not effectively contradict the negative claims, "
+                        "since they also describe the design as being attributed to famous architects. "
+                        "As a result, the general claim fails to fully exclude these possibilities.\n\n"
+                        "**Redundant information**: The attribute \"famous architect\" is somewhat redundant. "
+                        "Since all architects in both the positive and negative sets are famous, this description does not help in distinguishing between the two sets.\n\n"
+                        "**Improvement**: To improve contrast, the general claim could focus on a specific attribute of Jørn Utzon's design, "
+                        "such as \"The Sydney Opera House was designed by an architect known for organic modernism.\" "
+                        "This would help differentiate between the positive and negative claims more effectively."
+                    ),
+                    "need_further_refinement": True
+                }
+            ]
+            
+            for example in examples:
+                example_selector.add_example(example)
+            
+        super().__init__(example_selector=example_selector)
     
     @overrides
     def get_prompt_template(self) -> Runnable:
         """ """
-        
-        example_selector = ConstantExampleSelector()
-        examples = [
-            {
-                # "question": "Who designed the Sydney Opera House?",
-                "general_claim": "The Sydney Opera House was designed by a famous architect.",
-                "positive": (
-                    "- The Sydney Opera House was designed by Jørn Utzon.\n"
-                    "- The Sydney Opera House was designed by Louis Kahn.\n"
-                    "- The Sydney Opera House was designed by Tadao Ando."
-                ),
-                "negative": (
-                    "- The Sydney Opera House was designed by Ludwig Mies van der Rohe.\n"
-                    "- The Sydney Opera House was designed by Le Corbusier."
-                ),
-                "feedback": (
-                    "**Alignment with positive claims**: The general claim, \"The Sydney Opera House was designed by a famous architect,\" "
-                    "aligns well with each positive claim, as all three architects (Jørn Utzon, Louis Kahn, and Tadao Ando) are widely recognized as famous. "
-                    "Therefore, the general claim remains true regardless of which positive claim is true.\n\n"
-                    "**Contradiction with negative claims**: The negative claims involve architects (Ludwig Mies van der Rohe, Le Corbusier) who are also famous. "
-                    "This means the general claim does not effectively contradict the negative claims, "
-                    "since they also describe the design as being attributed to famous architects. "
-                    "As a result, the general claim fails to fully exclude these possibilities.\n\n"
-                    "**Redundant information**: The attribute \"famous architect\" is somewhat redundant. "
-                    "Since all architects in both the positive and negative sets are famous, this description does not help in distinguishing between the two sets.\n\n"
-                    "**Improvement**: To improve contrast, the general claim could focus on a specific attribute of Jørn Utzon's design, "
-                    "such as \"The Sydney Opera House was designed by an architect known for organic modernism.\" "
-                    "This would help differentiate between the positive and negative claims more effectively."
-                ),
-                "need_further_refinement": True
-            }
-        ]
-        
-        for example in examples:
-            example_selector.add_example(example)
         
         example_prompt = ChatPromptTemplate.from_messages([
             ("human", "**Claim to Refine**: {general_claim}\n**Positive Claims**:\n{positive}\n\n**Negative Claims**:\n{negative}"),
@@ -124,7 +131,7 @@ class GeneralClaimFeedbackStep(Step):
         
         few_shot_prompt_template = FewShotChatMessagePromptTemplate(
             example_prompt=example_prompt,
-            example_selector=example_selector
+            example_selector=self._example_selector
         )
         
         prompt_template = ChatPromptTemplate.from_messages(
