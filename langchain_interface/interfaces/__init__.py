@@ -1,1 +1,1 @@
-from .self_refine.general_claim_revision_interface import GeneralClaimRevisionInterface
+from .self_refine import GeneralClaimRevisionInterface

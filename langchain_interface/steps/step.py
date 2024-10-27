@@ -48,16 +48,21 @@ class Step(Registrable, abc.ABC):
         self, 
         llm: BaseLanguageModel,
         parse_input: Callable[[BaseState], Dict[Text, Any]],
-        parse_output: Callable[[LLMResponse], Dict[Text, Any]],
+        parse_output: Union[Callable[[LLMResponse], Dict[Text, Any]], Callable[[LLMResponse, BaseState], Dict[Text, Any]]]
     ) -> Callable[[BaseState], BaseState]:
         """ """
         
         chained_runnable = self.chain_llm(llm)
-        def _callable(state: BaseState) -> BaseState:
+
+        # TODO: whether we want to passdown type hints
+        def _callable(state):
             """ """
             inputs = parse_input(state)
             output = chained_runnable.invoke(inputs)
-            return parse_output(output)
+            
+            # check whether parse_output takes a single argument or two
+            # if takes two, pass the state as the second argument
+            return parse_output(output) if len(parse_output.__code__.co_varnames) == 1 else parse_output(output, state)
         
         return _callable
     

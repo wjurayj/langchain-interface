@@ -91,7 +91,7 @@ class GeneralClaimRevisionInterface(Interface):
             assert state["tags"][-1] == GeneralClaimRevisionTag.FEEDBACK, f"Expected feedback tag, but got {state['tags'][-1]}"
             return "refine" if state["responses"][-1].need_further_refinement else END
         
-        graph_builder = StateGraph(GeneralClaimRevisionInterface)
+        graph_builder = StateGraph(GeneralClaimRevisionState)
 
         # construct graph interface
         graph_builder.add_node("summarize", _call_summary_step)
