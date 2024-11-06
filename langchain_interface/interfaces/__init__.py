@@ -1,1 +1,1 @@
-from .self_refine import GeneralClaimRevisionInterface
+from .bird import *
