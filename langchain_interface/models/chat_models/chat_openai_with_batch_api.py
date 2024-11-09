@@ -71,7 +71,7 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
             **kwargs
         )
         
-        return [LLMResult(generations=generations) for generations in llm_results.generations]
+        return [generations[0].message for generations in llm_results.generations]
         
     @overrides
     async def agenerate_prompt(
@@ -188,110 +188,111 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
                 raise ValueError(msg)
             
         # perform cache val operations
-        processed = [ChatResult(generation=cache_val) if isinstance(cache_val, list) else None for cache_val in cache_vals]
+        processed = [ChatResult(generations=cache_val) if isinstance(cache_val, list) else None for cache_val in cache_vals]
         need_process_index = [i for i, cache_val in enumerate(cache_vals) if cache_val is None]
         
         filtered_message_batches = [message_batches[i] for i in need_process_index]
-        
-        # No need to control rate limiter, as batched API takes up to 24H for most of the queries
-        # TODO: split into maximum batches for more than K number of queries at a time.
-        # A Batch can contain 50,000 requests
-        
-        # Also, pointless to obey should_stream
-        payloads = [self._get_request_payload(messages, stop=stop, **kwargs) for messages in filtered_message_batches]
-        generation_info = None
 
-        assert self.include_response_headers is False, "Response headers are not supported in batch mode."
-        
-        # generate with the payloads
-
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as file_:
-            batch_file_name = file_.name
-
-            for pidx, payload in enumerate(payloads):
-                in_batch_id = f"request-{pidx}"
-                file_.write(
-                    dumps(
-                        {
-                            "custom_id": in_batch_id,
-                            "method": "POST",
-                            "url": "/v1/chat/completions",
-                            "body": payload
-                        }
-                    ) + "\n"
-                )
-                
-        batch_input_file = self.root_client.files.create(
-            file=open(batch_file_name, "rb"),
-            purpose="batch"
-        )
-
-        batch_input_file_id = batch_input_file.id
-
-        batch_obj = self.root_client.batches.create(
-            input_file_id=batch_input_file_id,
-            endpoint="/v1/chat/completions",
-            completion_window="24h",
-            metadata={
-                "description": "nightly eval job"
-            }
-        )
-        
-        batch_request_id = batch_obj.id
-        batch_output_file_id = None
-        
-        sleeping_window = 60
-        
-        while True:
-            batch_obj = self.root_client.batches.retrieve(batch_request_id)
-            if batch_obj.status in [
-                "validating",
-                "finalizing",
-                "in_progress",
-            ]:
-                await asyncio.sleep(sleeping_window)
-                sleeping_window = min(sleeping_window * 2, 300)
-            elif batch_obj.status == "completed":
-                batch_output_file_id = batch_obj.output_file_id
-                break
-            else:
-                raise ValueError(f"Batch request failed with status: {batch_obj.status}")
+        if filtered_message_batches:
+            # No need to control rate limiter, as batched API takes up to 24H for most of the queries
+            # TODO: split into maximum batches for more than K number of queries at a time.
+            # A Batch can contain 50,000 requests
             
-        # retrieve the results using the output file id
-        batch_responses: Text = self.root_client.files.content(batch_output_file_id).text
-        batch_responses = [json.loads(br) for br in batch_responses.split("\n") if br.strip()]
-        
-        batch_response_dict = {
-            br["custom_id"]: br['response']['body'] for br in batch_responses
-        }
-        
-        # index sort into the order of the original messages
-        sorted_batch_responses = [batch_response_dict[f"request-{i}"] for i in range(len(payloads))]
-        print(sorted_batch_responses)
+            # Also, pointless to obey should_stream
+            payloads = [self._get_request_payload(messages, stop=stop, **kwargs) for messages in filtered_message_batches]
+            generation_info = None
 
-        new_results = await asyncio.gather(*(
-            run_in_executor(
-                None,
-                self._create_chat_result,
-                response,
-                generation_info
-            ) for response in sorted_batch_responses
-        ))
-        
-        for nr, npindex in zip(new_results, need_process_index):
-            processed[npindex] = nr
+            assert self.include_response_headers is False, "Response headers are not supported in batch mode."
             
-        for r in processed:
-            if len(r.generations) == 1:
-                r.generations[0].message.repsonse_metadata = {
-                    **r.llm_output,
-                    **r.generations[0].message.response_metadata,
+            # generate with the payloads
+
+            with tempfile.NamedTemporaryFile(mode="w", delete=False) as file_:
+                batch_file_name = file_.name
+
+                for pidx, payload in enumerate(payloads):
+                    in_batch_id = f"request-{pidx}"
+                    file_.write(
+                        dumps(
+                            {
+                                "custom_id": in_batch_id,
+                                "method": "POST",
+                                "url": "/v1/chat/completions",
+                                "body": payload
+                            }
+                        ) + "\n"
+                    )
+                    
+            batch_input_file = self.root_client.files.create(
+                file=open(batch_file_name, "rb"),
+                purpose="batch"
+            )
+
+            batch_input_file_id = batch_input_file.id
+
+            batch_obj = self.root_client.batches.create(
+                input_file_id=batch_input_file_id,
+                endpoint="/v1/chat/completions",
+                completion_window="24h",
+                metadata={
+                    "description": "nightly eval job"
                 }
+            )
+            
+            batch_request_id = batch_obj.id
+            batch_output_file_id = None
+            
+            sleeping_window = 60
+            
+            while True:
+                batch_obj = self.root_client.batches.retrieve(batch_request_id)
+                if batch_obj.status in [
+                    "validating",
+                    "finalizing",
+                    "in_progress",
+                ]:
+                    await asyncio.sleep(sleeping_window)
+                    sleeping_window = min(sleeping_window * 2, 300)
+                elif batch_obj.status == "completed":
+                    batch_output_file_id = batch_obj.output_file_id
+                    break
+                else:
+                    raise ValueError(f"Batch request failed with status: {batch_obj.status}")
+                
+            # retrieve the results using the output file id
+            batch_responses: Text = self.root_client.files.content(batch_output_file_id).text
+            batch_responses = [json.loads(br) for br in batch_responses.split("\n") if br.strip()]
+            
+            batch_response_dict = {
+                br["custom_id"]: br['response']['body'] for br in batch_responses
+            }
+            
+            # index sort into the order of the original messages
+            sorted_batch_responses = [batch_response_dict[f"request-{i}"] for i in range(len(payloads))]
 
-        if check_cache and llm_cache:
-            # synchronously update the cache
-            for dp, r in zip(dumped_prompts, processed):
-                llm_cache.update(prompt=dp, llm_string=llm_string, return_val=r.generations)
+            new_results = await asyncio.gather(*(
+                run_in_executor(
+                    None,
+                    self._create_chat_result,
+                    response,
+                    generation_info
+                ) for response in sorted_batch_responses
+            ))
+            
+            for nr, npindex in zip(new_results, need_process_index):
+                processed[npindex] = nr
+                
+            for r in processed:
+                if len(r.generations) == 1:
+                    r.generations[0].message.repsonse_metadata = {
+                        **r.llm_output,
+                        **r.generations[0].message.response_metadata,
+                    }
+
+            if check_cache and llm_cache:
+                # synchronously update the cache
+                new_dumped_prompts = [dumped_prompts[i] for i in need_process_index]
+                for dp, r in zip(new_dumped_prompts, new_results):
+                    llm_cache.update(prompt=dp, llm_string=llm_string, return_val=r.generations)
 
         # manual remove of tempfile
         # even if the removal failed, we'll ignore it
