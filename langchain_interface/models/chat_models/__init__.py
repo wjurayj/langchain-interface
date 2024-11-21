@@ -1,1 +1,2 @@
 from .chat_openai_with_batch_api import ChatOpenAIWithBatchAPI
+from .chat_openai_with_batch_api import BatchedAPIConfig
