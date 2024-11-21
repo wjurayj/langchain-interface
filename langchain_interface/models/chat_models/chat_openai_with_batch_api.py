@@ -2,6 +2,7 @@
 
 import asyncio
 from overrides import overrides
+from typing_extensions import NotRequired
 import json
 import os
 import warnings
@@ -13,8 +14,6 @@ from langchain.globals import get_llm_cache
 from langchain_core.runnables.utils import Input
 from langchain_core.prompt_values import PromptValue
 from langchain_core.messages import BaseMessage
-from langchain_core.callbacks.manager import AsyncCallbackManager
-from langchain_core.language_models.base import LanguageModelInput
 from langchain_core.runnables.config import (
     RunnableConfig,
     ensure_config,
@@ -24,6 +23,7 @@ from langchain_core.runnables.config import (
 from langchain_core.outputs import ChatResult
 from langchain_core.outputs import LLMResult
 from langchain_openai.chat_models.base import ChatOpenAI
+from langchain_openai.chat_models.base import _convert_dict_to_message
 from typing import (
     TYPE_CHECKING,
     List,
@@ -36,6 +36,11 @@ from typing import (
 if TYPE_CHECKING:
     from langchain_core.callbacks import Callbacks
     # from langchain_core.language_models.base import LLMResult
+    
+    
+class BatchedAPIConfig(RunnableConfig):
+    max_abatch_size: NotRequired[int|None]
+    batch_file_dir: NotRequired[str|None]
 
 
 class ChatOpenAIWithBatchAPI(ChatOpenAI):
@@ -49,16 +54,23 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         return_exceptions: bool = False,
         **kwargs: Optional[Any],
     ):
+
+        batch_file_dir = config[0]['configurable'].get("batch_file_dir", None) if isinstance(config, list) else config['configurable'].get("batch_file_dir", None)
+        max_abatch_size = config[0]['configurable'].get("max_abatch_size", None) if isinstance(config, list) else config['configurable'].get("max_abatch_size", None)
+        
+        # print(f"Batch file dir: {batch_file_dir}")
+        # print(f"Max abatch size: {max_abatch_size}")
+        # exit()
         
         if not inputs:
             return []
         
         stop = kwargs.get("stop", None)
-            
+        
         if isinstance(config, list):
             config = config[0]
         ensure_config(config)
-
+        
         # TODO: Check if further process is needed
         llm_results = await self.agenerate_prompt(
             [self._convert_input(input_) for input_ in inputs],
@@ -68,6 +80,10 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
             metadata=config.get("metadata"),
             run_name=config.get("run_name"),
             run_id=config.get("run_id", None),
+            # max_abatch_size=config.get("max_abatch_size", None),
+            # batch_file_dir=config.get("batch_file_dir", None),
+            max_abatch_size=max_abatch_size,
+            batch_file_dir=batch_file_dir,
             **kwargs
         )
         
@@ -79,6 +95,8 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         prompts: list[PromptValue],
         stop: Optional[list[str]] = None,
         callbacks: "Callbacks" = None,
+        max_abatch_size: Optional[int] = None,
+        batch_file_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> LLMResult:
         """ This is included for clarity reasons """
@@ -88,6 +106,8 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
             prompt_messages,
             stop=stop,
             callbacks=callbacks,
+            max_abatch_size=max_abatch_size,
+            batch_file_dir=batch_file_dir,
             **kwargs
         )
     
@@ -102,6 +122,8 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         metadata: Optional[dict[str, Any]] = None,
         run_name: Optional[str] = None,
         run_id: Optional[uuid.UUID] = None,
+        max_abatch_size: Optional[int] = None,
+        batch_file_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> LLMResult:
         """ Generate the response from the model """
@@ -139,6 +161,8 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         results = await self._abatch_generate_with_cache(
             messages,
             stop=stop,
+            max_abatch_size=max_abatch_size,
+            batch_file_dir=batch_file_dir,
             **kwargs
         )
         exceptions = []
@@ -165,6 +189,8 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         self,
         message_batches: list[list[BaseMessage]],
         stop: Optional[list[str]] = None,
+        max_abatch_size: Optional[int] = 50_000,
+        batch_file_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> List[ChatResult]:
         """ This function at its minimum, should equivalent to
@@ -194,80 +220,105 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         filtered_message_batches = [message_batches[i] for i in need_process_index]
 
         if filtered_message_batches:
-            # No need to control rate limiter, as batched API takes up to 24H for most of the queries
-            # TODO: split into maximum batches for more than K number of queries at a time.
-            # A Batch can contain 50,000 requests
+            # TODO: use multiple threads to generate the payloads
             
             # Also, pointless to obey should_stream
             payloads = [self._get_request_payload(messages, stop=stop, **kwargs) for messages in filtered_message_batches]
+            batch_response_dict = {}
+            current_payloads = [(payloads[i], i) for i in range(len(payloads)) if f"request-{i}" not in batch_response_dict][:max_abatch_size]
             generation_info = None
 
             assert self.include_response_headers is False, "Response headers are not supported in batch mode."
             
             # generate with the payloads
 
-            with tempfile.NamedTemporaryFile(mode="w", delete=False) as file_:
-                batch_file_name = file_.name
-
-                for pidx, payload in enumerate(payloads):
-                    in_batch_id = f"request-{pidx}"
-                    file_.write(
-                        dumps(
-                            {
-                                "custom_id": in_batch_id,
-                                "method": "POST",
-                                "url": "/v1/chat/completions",
-                                "body": payload
-                            }
-                        ) + "\n"
-                    )
-                    
-            batch_input_file = self.root_client.files.create(
-                file=open(batch_file_name, "rb"),
-                purpose="batch"
-            )
-
-            batch_input_file_id = batch_input_file.id
-
-            batch_obj = self.root_client.batches.create(
-                input_file_id=batch_input_file_id,
-                endpoint="/v1/chat/completions",
-                completion_window="24h",
-                metadata={
-                    "description": "nightly eval job"
-                }
-            )
-            
-            batch_request_id = batch_obj.id
-            batch_output_file_id = None
-            
-            sleeping_window = 60
-            
-            while True:
-                batch_obj = self.root_client.batches.retrieve(batch_request_id)
-                if batch_obj.status in [
-                    "validating",
-                    "finalizing",
-                    "in_progress",
-                ]:
-                    await asyncio.sleep(sleeping_window)
-                    sleeping_window = min(sleeping_window * 2, 300)
-                elif batch_obj.status == "completed":
-                    batch_output_file_id = batch_obj.output_file_id
-                    break
-                else:
-                    raise ValueError(f"Batch request failed with status: {batch_obj.status}")
+            while current_payloads:
                 
-            # retrieve the results using the output file id
-            batch_responses: Text = self.root_client.files.content(batch_output_file_id).text
-            batch_responses = [json.loads(br) for br in batch_responses.split("\n") if br.strip()]
-            
-            batch_response_dict = {
-                br["custom_id"]: br['response']['body'] for br in batch_responses
-            }
+                with (
+                    tempfile.NamedTemporaryFile(mode="w", delete=False) if batch_file_dir is None
+                    else open(os.path.join(batch_file_dir, f"{uuid.uuid4()}.jsonl"), "w")
+                ) as file_:
+                    batch_file_name = file_.name
+
+                    for payload, pidx in current_payloads:
+                        in_batch_id = f"request-{pidx}"
+                        file_.write(
+                            dumps(
+                                {
+                                    "custom_id": in_batch_id,
+                                    "method": "POST",
+                                    "url": "/v1/chat/completions",
+                                    "body": payload
+                                }
+                            ) + "\n"
+                        )
+                        
+                batch_input_file = self.root_client.files.create(
+                    file=open(batch_file_name, "rb"),
+                    purpose="batch"
+                )
+
+                batch_input_file_id = batch_input_file.id
+
+                batch_obj = self.root_client.batches.create(
+                    input_file_id=batch_input_file_id,
+                    endpoint="/v1/chat/completions",
+                    completion_window="24h",
+                    metadata={
+                        "description": "nightly eval job"
+                    }
+                )
+                
+                batch_request_id = batch_obj.id
+                batch_output_file_id = None
+
+                # manual remove of tempfile
+                # even if the removal failed, we'll ignore it
+                
+                if batch_file_dir is None:
+                    try:
+                        os.remove(batch_file_name)
+                    except Exception as e:
+                        warnings.warn(f"Failed to remove batch file: {e}")
+                
+                sleeping_window = 60
+                
+                while True:
+                    batch_obj = self.root_client.batches.retrieve(batch_request_id)
+                    if batch_obj.status in [
+                        "validating",
+                        "finalizing",
+                        "in_progress",
+                    ]:
+                        await asyncio.sleep(sleeping_window)
+                        sleeping_window = min(sleeping_window * 2, 300)
+                    elif batch_obj.status == "completed":
+                        batch_output_file_id = batch_obj.output_file_id
+                        break
+                    else:
+                        raise ValueError(f"Batch request failed with status: {batch_obj.status}")
+                    
+                # retrieve the results using the output file id
+                batch_responses: Text = self.root_client.files.content(batch_output_file_id).text
+                
+                if batch_file_dir is not None:
+                    # store the batch responses in the batch file dir
+                    batch_output_filename = self.root_client.files.retrieve(batch_output_file_id).filename
+                    with open(os.path.join(batch_file_dir, batch_output_filename), "w") as file_:
+                        file_.write(batch_responses)
+
+                batch_responses = [json.loads(br) for br in batch_responses.split("\n") if br.strip()]
+                
+                batch_response_dict.update({
+                    br["custom_id"]: br['response']['body'] for br in batch_responses
+                })
+
+                # update the current payloads batch response_dict
+                current_payloads = [(payloads[i], i) for i in range(len(payloads)) if f"request-{i}" not in batch_response_dict][:max_abatch_size]
             
             # index sort into the order of the original messages
             sorted_batch_responses = [batch_response_dict[f"request-{i}"] for i in range(len(payloads))]
+            assert len(sorted_batch_responses) == len(filtered_message_batches), "Batch responses and filtered messages are not the same length."
 
             new_results = await asyncio.gather(*(
                 run_in_executor(
@@ -293,12 +344,69 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
                 new_dumped_prompts = [dumped_prompts[i] for i in need_process_index]
                 for dp, r in zip(new_dumped_prompts, new_results):
                     llm_cache.update(prompt=dp, llm_string=llm_string, return_val=r.generations)
-
-        # manual remove of tempfile
-        # even if the removal failed, we'll ignore it
-        try:
-            os.remove(batch_file_name)
-        except Exception as e:
-            warnings.warn(f"Failed to remove batch file: {e}")
                 
         return processed
+    
+    def cache_results(
+        self,
+        input_files: Union[Text, List[Text]],
+        output_files: Union[Text, List[Text]],
+        stop: Optional[List[str]] = None,
+    ):
+        """ """
+        
+        if isinstance(input_files, str):
+            input_files = [input_files]
+            
+        if isinstance(output_files, str):
+            output_files = [output_files]
+
+        assert len(input_files) == len(output_files), "Same number of input and output files are required."
+
+        for input_file, output_file in zip(input_files, output_files):
+            
+            if input_file.startswith("openai://"):
+                input_file_content = self.root_client.files.content(input_file[9:]).text
+            else:
+                with open(input_file, "r") as file_:
+                    input_file_content = file_.read()
+
+            if output_file.startswith("openai://"):
+                output_file_content = self.root_client.files.content(output_file[9:]).text
+            else:
+                with open(output_file, "r") as file_:
+                    output_file_content = file_.read()
+
+            requests = [json.loads(br) for br in input_file_content.split("\n") if br.strip()]
+            responses = [json.loads(br) for br in output_file_content.split("\n") if br.strip()]
+
+            # in post-processing we allow requests and responses to be different lengths
+
+            batch_response_dict = {
+                br["custom_id"]: br['response']['body'] for br in responses
+            }
+            
+            sorted_batch_responses = [batch_response_dict[request['custom_id']] for request in requests if request['custom_id'] in batch_response_dict]
+            sorted_batch_requests = [request['body'] for request in requests if request['custom_id'] in batch_response_dict]
+            
+            new_results = [
+                self._create_chat_result(response, None)
+                for response in sorted_batch_responses
+            ]
+
+            for r in new_results:
+                if len(r.generations) == 1:
+                    r.generations[0].message.repsonse_metadata = {
+                        **r.llm_output,
+                        **r.generations[0].message.response_metadata,
+                    }
+                    
+            llm_cache = self.cache if isinstance(self.cache, BaseCache) else get_llm_cache()
+            check_cache = self.cache or self.cache is None
+            # if self.cache and isinstance(self.cache, BaseCache):
+            if check_cache and llm_cache:
+                # new_dumped_prompts = [dumped_prompts[i] for i in need_process_index]
+                llm_string = self._get_llm_string(stop=stop)
+                new_dumped_prompts = [dumps([_convert_dict_to_message(msg) for msg in request['messages']]) for request in sorted_batch_requests]
+                for dp, r in zip(new_dumped_prompts, new_results):
+                    llm_cache.update(prompt=dp, llm_string=llm_string, return_val=r.generations)
