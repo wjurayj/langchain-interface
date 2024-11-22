@@ -335,7 +335,7 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
             for r in processed:
                 if len(r.generations) == 1:
                     r.generations[0].message.repsonse_metadata = {
-                        **r.llm_output,
+                        **(r.llm_output if r.llm_output else {}),
                         **r.generations[0].message.response_metadata,
                     }
 
@@ -397,7 +397,7 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
             for r in new_results:
                 if len(r.generations) == 1:
                     r.generations[0].message.repsonse_metadata = {
-                        **r.llm_output,
+                        **(r.llm_output if r.llm_output else {}),
                         **r.generations[0].message.response_metadata,
                     }
                     
