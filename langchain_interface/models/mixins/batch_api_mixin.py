@@ -1,8 +1,7 @@
-""" Implement a subclass of ChatOpenAI that uses the batch API with `abatch` calls. """
+""" A mixin that allows for batched API calls (currently only tested against openai-api) """
 
 import asyncio
-from overrides import overrides
-from typing_extensions import NotRequired
+from typing_extensions import NotRequired, TypedDict
 import json
 import os
 import warnings
@@ -20,9 +19,9 @@ from langchain_core.runnables.config import (
     run_in_executor,
     get_config_list
 )
+from dataclasses import dataclass
 from langchain_core.outputs import ChatResult
 from langchain_core.outputs import LLMResult
-from langchain_openai.chat_models.base import ChatOpenAI
 from langchain_openai.chat_models.base import _convert_dict_to_message
 from typing import (
     TYPE_CHECKING,
@@ -38,14 +37,15 @@ if TYPE_CHECKING:
     # from langchain_core.language_models.base import LLMResult
     
     
-class BatchedAPIConfig(RunnableConfig):
+# class BatchedAPIConfigMixin(RunnableConfig):
+class BatchedAPIConfigMixin(TypedDict):
     max_abatch_size: NotRequired[int|None]
     batch_file_dir: NotRequired[str|None]
 
 
-class ChatOpenAIWithBatchAPI(ChatOpenAI):
+# class ChatOpenAIWithBatchAPI(ChatOpenAI):
+class BatchedAPIMixin:
     
-    @overrides
     async def abatch(
         self,
         inputs: List[Input],
@@ -89,7 +89,6 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
         
         return [generations[0].message for generations in llm_results.generations]
         
-    @overrides
     async def agenerate_prompt(
         self,
         prompts: list[PromptValue],
@@ -111,7 +110,6 @@ class ChatOpenAIWithBatchAPI(ChatOpenAI):
             **kwargs
         )
     
-    @overrides
     async def agenerate(
         self,
         messages: list[list[BaseMessage]],

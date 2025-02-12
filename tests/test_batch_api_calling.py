@@ -32,7 +32,8 @@ class TestBatchAPICalling(unittest.IsolatedAsyncioTestCase):
         # self._llm = ChatOpenAI(
             temperature=0,
             model="gpt-4o",
-            model_kwargs={"top_p": 0.98},
+            top_p=0.98,
+            # model_kwargs={"top_p": 0.98},
             max_tokens=None,
             verbose=True,
         )

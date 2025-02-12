@@ -7,10 +7,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "langchain-interface"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
     "langchain",
-    "langgraph",
     "overrides",
     "langchain-community",
     "langchain-core",
