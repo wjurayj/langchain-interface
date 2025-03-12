@@ -45,7 +45,7 @@ class ProbExtractParser(BaseOutputParser[str]):
 
         # Try different probability formats
         patterns = [
-            r"'''([\d.]+)'''",  # Triple quote format
+            r"```([\d.]+)```",  # Triple quote format
             r"boxed\{([\d.]+)\}",  # LaTeX boxed format
         ]
         
@@ -80,10 +80,10 @@ class ProbabilityPredictionStep(Step):
 
 Premise: {premise}
 Hypothesis: {hypothesis}
-              
-Your final probability estimate should be a value in the range \([0,1]\), as fine-grained as possible, and formatted as follows: '''your_final_probability'''
 
-For example, if the estimated probability is 0.0653, the output should be: '''0.0653'''
+Your final probability estimate should be a value in the range \([0,1]\), as fine-grained as possible, and formatted as follows: ```your_final_probability```
+
+For example, if the estimated probability is 0.0653, the output should be: ```0.0653```
               """)] 
         )        
     
