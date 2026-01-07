@@ -15,5 +15,4 @@ dependencies = [
     "langchain-core",
     "langchain-openai",
     "rank_bm25",
-    "registrable@git+ssh://git@github.com/zipJiang/registrable.git"
 ]
